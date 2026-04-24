@@ -129,6 +129,14 @@ body {
   transition: background-color 0.15s ease, transform 0.05s ease;
 }
 
+.deleteBtn {
+  background: none;
+  border: none;
+  align-items: center;
+  margin-bottom: -5px;
+  visibility: hidden;
+}
+
 .chat-item.selected {
   background-color: rgba(36, 36, 36, 0.8);
   transform: scale(0.98);
@@ -136,6 +144,14 @@ body {
 
 .chat-item:hover {
   background-color: rgba(48, 48, 48);
+  .deleteBtn {
+      background: none;
+      border: none;
+      align-items: center;
+      margin-bottom: -5px;
+      visibility: visible;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+  }
 }
 
 .chat-item span {
@@ -149,12 +165,7 @@ body {
   padding: 0px 12px
 }
 
-.deleteBtn {
-  background: none;
-  border: none;
-  align-items: center;
-  margin-bottom: -5px
-}
+
 
 .deleteIcon {
     align-self: center;
