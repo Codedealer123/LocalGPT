@@ -18,7 +18,8 @@ function mapMessagesForWorker(messages) {
  * @param {object} progressReport
  */
 const initProgressCallback = (progressReport) => {
-    self.postMessage({ type: "progress", progress: progressReport });
+  // console.log(progressReport)
+  self.postMessage({ type: "progress", progress: progressReport });
 };
 
 // @ts-ignore

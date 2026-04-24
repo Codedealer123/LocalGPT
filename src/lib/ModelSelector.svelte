@@ -1,6 +1,5 @@
 <script>
   import { onDestroy, tick } from 'svelte';
-  import VirtualList from '@sveltejs/svelte-virtual-list';
   import { availableModels, currentModel } from './js/store.js';
   import { formatModelName, getModelHint } from './js/format.js';
   import { isModelRecommended } from './js/recommendModels.js';
@@ -16,11 +15,7 @@
   let optionRefs = [];
 
   const listboxId = "model-selector-listbox";
-  const modelRowHeight = 40;
 
-  /**
-   * @param {{ model_id?: string } | string | null} model
-   */
   const getModelId = (model) =>
     typeof model === "string" ? model : model?.model_id ?? "";
 
@@ -35,7 +30,9 @@
   $: normalizedFilter = filterText.trim().toLowerCase();
 
   $: recommendedModelIds = new Set(
-    baseModels.filter((model) => isRecommendedModel(model)).map((model) => getModelId(model))
+    baseModels
+      .filter((model) => isRecommendedModel(model))
+      .map((model) => getModelId(model))
   );
 
   $: filteredModels = baseModels.filter((model) => {
@@ -45,17 +42,18 @@
     return !normalizedFilter || label.includes(normalizedFilter) || modelId.includes(normalizedFilter);
   });
 
-  $: visibleModels = [...filteredModels].sort((left, right) => {
-    const leftRecommended = recommendedModelIds.has(getModelId(left));
-    const rightRecommended = recommendedModelIds.has(getModelId(right));
-
-    if (leftRecommended === rightRecommended) return 0;
-    return leftRecommended ? -1 : 1;
+  $: visibleModels = [...filteredModels].sort((a, b) => {
+    const aRec = recommendedModelIds.has(getModelId(a));
+    const bRec = recommendedModelIds.has(getModelId(b));
+    if (aRec === bRec) return 0;
+    return aRec ? -1 : 1;
   });
 
-  $: visibleModelEntries = visibleModels.map((model, index) => ({ model, index }));
   $: selectedModelId = getModelId(selectedModel);
   $: selectedModelLabel = setModelSelector(selectedModel);
+
+  // reset refs when list changes
+  $: optionRefs = [];
 
   function toggleDropdown() {
     dropdownOpen = !dropdownOpen;
@@ -116,27 +114,24 @@
   }
 
   function initTooltips() {
-    tooltipInstances.forEach((tooltip) => tooltip.dispose());
+    tooltipInstances.forEach((t) => t.dispose());
     tooltipInstances = [];
 
-    document
-      .querySelectorAll('[data-bs-toggle="tooltip"]')
-      .forEach((element) => {
-        const existing = bootstrap.Tooltip.getInstance(element);
-        if (existing) existing.dispose();
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+      const existing = bootstrap.Tooltip.getInstance(el);
+      if (existing) existing.dispose();
 
-        tooltipInstances.push(
-          new bootstrap.Tooltip(element, {
-            offset: [0, 8],
-            customClass: 'custom-tooltip'
-          })
-        );
-      });
+      tooltipInstances.push(
+        new bootstrap.Tooltip(el, {
+          offset: [0, 8],
+          customClass: 'custom-tooltip'
+        })
+      );
+    });
   }
 
   function setModelSelector(model) {
-    const label = getLabel(model);
-    return label || "No Model Selected";
+    return getLabel(model) || "No Model Selected";
   }
 
   $: if (dropdownOpen) {
@@ -148,7 +143,7 @@
   }
 
   onDestroy(() => {
-    tooltipInstances.forEach((tooltip) => tooltip.dispose());
+    tooltipInstances.forEach((t) => t.dispose());
   });
 </script>
 
@@ -177,26 +172,31 @@
       />
     </div>
 
-    {#if visibleModelEntries.length}
-      <div class="model-options-list" id={listboxId} role="listbox" aria-label="Available models">
-        <VirtualList items={visibleModelEntries} height="256px" itemHeight={modelRowHeight} let:item>
+    {#if visibleModels.length}
+      <div
+        class="model-options-list"
+        id={listboxId}
+        role="listbox"
+        aria-label="Available models"
+      >
+        {#each visibleModels as model, i}
           <button
-            bind:this={optionRefs[item.index]}
-            id={`model-option-${item.index}`}
+            bind:this={optionRefs[i]}
+            id={`model-option-${i}`}
             type="button"
             role="option"
             class="model-option"
-            class:active={item.index === activeIndex}
-            class:selected={getModelId(item.model) === selectedModelId}
-            aria-selected={getModelId(item.model) === selectedModelId}
-            on:click={() => selectModel(item.model)}
+            class:active={i === activeIndex}
+            class:selected={getModelId(model) === selectedModelId}
+            aria-selected={getModelId(model) === selectedModelId}
+            on:click={() => selectModel(model)}
             data-bs-toggle="tooltip"
             data-bs-placement="right"
-            title={getModelHint(item.model.model_id)}
+            title={getModelHint(model.model_id)}
           >
-            {getLabel(item.model)}
+            {getLabel(model)}
           </button>
-        </VirtualList>
+        {/each}
       </div>
     {:else}
       <div class="empty-state">No models found</div>
@@ -276,15 +276,12 @@
 
   .model-options-list {
     max-height: 256px;
-    overflow: hidden;
-  }
-
-  .model-options-list :global(svelte-virtual-list-viewport) {
+    overflow-y: auto;
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
 
-  .model-options-list :global(svelte-virtual-list-viewport::-webkit-scrollbar) {
+  .model-options-list::-webkit-scrollbar {
     display: none;
   }
 
@@ -297,7 +294,6 @@
     cursor: pointer;
     font-size: 13px;
     width: 100%;
-    height: 40px;
   }
 
   .model-option:hover,
