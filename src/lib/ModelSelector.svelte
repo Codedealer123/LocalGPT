@@ -6,8 +6,6 @@
   import Icon from './Icon.svelte';
   import * as bootstrap from 'bootstrap';
 
-  export let selectedModel = null;
-
   let dropdownOpen = false;
   let filterText = "";
   let tooltipInstances = [];
@@ -49,8 +47,8 @@
     return aRec ? -1 : 1;
   });
 
-  $: selectedModelId = getModelId(selectedModel);
-  $: selectedModelLabel = setModelSelector(selectedModel);
+  $: currentModelId = getModelId($currentModel);
+  $: currentModelLabel = setModelSelector($currentModel);
 
   // reset refs when list changes
   $: optionRefs = [];
@@ -66,7 +64,6 @@
   }
 
   function selectModel(model) {
-    selectedModel = model;
     currentModel.set(model.model_id);
     localStorage.setItem("currentModel", model.model_id);
     closeDropdown();
@@ -158,7 +155,7 @@
     on:click={toggleDropdown}
     on:keydown={handleKeydown}
   >
-    <span class="model-selector-label">{selectedModelLabel}</span>
+    <span class="model-selector-label">{currentModelLabel}</span>
     <Icon name="dropdown" width="16" height="16"/>
   </button>
 
@@ -187,8 +184,8 @@
             role="option"
             class="model-option"
             class:active={i === activeIndex}
-            class:selected={getModelId(model) === selectedModelId}
-            aria-selected={getModelId(model) === selectedModelId}
+            class:selected={getModelId(model) === currentModelId}
+            aria-selected={getModelId(model) === currentModelId}
             on:click={() => selectModel(model)}
             data-bs-toggle="tooltip"
             data-bs-placement="right"

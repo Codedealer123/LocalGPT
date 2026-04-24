@@ -291,10 +291,10 @@ export async function postMessage(message, role) {
     await addMessageToChat(message, role);
 }
 
-export async function replyToUser() {
-    const response = await askAI();
+export async function replyToUser(options = {}) {
+    const response = await askAI(options);
     await postMessage(response.response.content, 'assistant');
-    console.log('Model Usage: ', response.usage);
+    return response;
 }
 
 selectedChatId.subscribe((chatID) => {

@@ -11,7 +11,6 @@
   placeholder="Ask anything"
   class="prompt-input"
   bind:value={promptInput}
-  disabled={disabled}
   on:keydown={(event) => event.key === 'Enter' && !disabled && onSend()}
 />
   
