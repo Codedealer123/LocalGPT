@@ -1,5 +1,6 @@
 <script>
-    import { get } from "svelte/store";
+    import { get, tick } from "svelte/store";
+    import VirtualList from '@sveltejs/svelte-virtual-list';
     import { currentChatMessages, postMessage } from "./js/chats.js";
     import { selectedChatId, currentModel, aiWorker } from "./js/store.js";
     import Input from "./Input.svelte";
@@ -9,8 +10,25 @@
     let onSend = () => handleSend();
     let isSending = false;
     let streamingMessage = "";
+    let chatListHost;
 
     let requestCounter = 0;
+
+    $: renderedMessages = streamingMessage
+      ? [...$currentChatMessages, { id: 'streaming', role: 'assistant', content: streamingMessage }]
+      : $currentChatMessages;
+
+    async function scrollChatToBottom() {
+      await tick();
+      const viewport = chatListHost?.querySelector('svelte-virtual-list-viewport');
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
+    }
+
+    $: if (renderedMessages.length) {
+      void scrollChatToBottom();
+    }
 
     async function handleSend() {
       const content = promptInput.trim();
@@ -79,7 +97,7 @@
     }
 </script>
 
-<div class="chat-area">
+<div class="chat-area" class:chat-active={renderedMessages.length > 0}>
   {#if $currentChatMessages.length == 0}
     <h1 class="greeting">What can I help with?</h1>
 
@@ -89,22 +107,14 @@
       </div>
     </div>
   {:else}
-    <div class="chat-messages">
-      {#each $currentChatMessages as msg}
-          <div class={msg.role === "user" ? "user-message" : "assistant-message"}>
-            <div class={msg.role === "user" ? "user-bubble" : "assistant-bubble"}>
-              {msg.content}
-            </div>
-          </div>
-      {/each}
-
-      {#if streamingMessage}
-        <div class="assistant-message">
-          <div class="assistant-bubble">
-            {streamingMessage}
+    <div class="chat-messages" bind:this={chatListHost}>
+      <VirtualList items={renderedMessages} height="100%" let:item>
+        <div class={item.role === "user" ? "user-message" : "assistant-message"}>
+          <div class={item.role === "user" ? "user-bubble" : "assistant-bubble"}>
+            {item.content}
           </div>
         </div>
-      {/if}
+      </VirtualList>
     </div>
 
     <div class="chat-input-wrapper">

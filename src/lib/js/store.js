@@ -29,4 +29,8 @@ if (aiWorker) {
             availableModels.set(event.data.models ?? []);
         }
     });
+
+    // Request models after the listener is attached so we do not miss
+    // the worker's initial postMessage during startup races.
+    aiWorker.postMessage({ type: 'requestModels' });
 }

@@ -6,7 +6,7 @@ describe("ai controller", () => {
     vi.restoreAllMocks();
   });
 
-  it("matches replies to the correct request id while preserving the public return shape", async () => {
+  it("matches worker completions to the correct request id while preserving the public return shape", async () => {
     const listeners = new Set();
     const postedMessages = [];
 
@@ -59,7 +59,7 @@ describe("ai controller", () => {
     for (const handler of listeners) {
       handler({
         data: {
-          type: "reply",
+          type: "done",
           requestId: postedMessages[0].requestId + 1,
           data: { response: { content: "Wrong" } },
         },
@@ -76,7 +76,7 @@ describe("ai controller", () => {
     for (const handler of listeners) {
       handler({
         data: {
-          type: "reply",
+          type: "done",
           requestId: postedMessages[0].requestId,
           data: {
             response: { content: "Correct", role: "assistant" },

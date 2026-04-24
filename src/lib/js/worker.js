@@ -39,6 +39,20 @@ self.postMessage({ type: "models", models: modelList });
 self.onmessage = async (msg) => {
     const { requestId, modelID, messages } = msg.data;
 
+    if (msg.data?.type === "requestModels") {
+        self.postMessage({ type: "models", models: modelList });
+        return;
+    }
+
+    if (!modelID) {
+        self.postMessage({
+            requestId,
+            type: "error",
+            error: "Please select a model before sending a message."
+        });
+        return;
+    }
+
     if (!messages?.length) {
         self.postMessage({
             requestId,

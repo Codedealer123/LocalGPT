@@ -19,13 +19,22 @@ export function askAI() {
 
         const requestId = nextRequestId++;
 
-        const handler = (e) => {
-            if (e.data?.type !== "reply" || e.data?.requestId !== requestId) {
+        const handler = (event) => {
+            const data = event.data ?? {};
+
+            if (data.requestId !== requestId) {
                 return;
             }
 
-            aiWorker.removeEventListener("message", handler);
-            resolve(e.data.data);
+            if (data.type === "done") {
+                aiWorker.removeEventListener("message", handler);
+                resolve(data.data);
+            }
+
+            if (data.type === "error") {
+                aiWorker.removeEventListener("message", handler);
+                reject(data.error);
+            }
         };
 
         aiWorker.addEventListener("message", handler);
