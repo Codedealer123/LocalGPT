@@ -6,6 +6,12 @@
   src: url('./lib/fonts/SohneBuch.otf') format('opentype');
 }
 
+:root {
+  --sidebar-width: clamp(220px, 24vw, 280px);
+  --content-width: clamp(320px, 72vw, 860px);
+  --page-padding: clamp(12px, 2vw, 20px);
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -51,7 +57,7 @@ body,
 }
 
 .sidebar {
-  width: 260px;
+  width: var(--sidebar-width);
   background-color: #181818;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow: 0 0 30px rgba(0, 0, 0, 0.15);
@@ -66,7 +72,7 @@ body,
 }
 
 .sidebar.closed {
-  margin-left: -260px;
+  margin-left: calc(-1 * var(--sidebar-width));
 }
 
 .sidebar-top {
@@ -283,7 +289,11 @@ body,
 }
 
 .top-nav {
-  padding: 16px max(20px, env(safe-area-inset-right)) 16px max(20px, env(safe-area-inset-left));
+  padding:
+    16px
+    max(var(--page-padding), env(safe-area-inset-right))
+    16px
+    max(var(--page-padding), env(safe-area-inset-left));
   display: flex;
   align-items: center;
   min-height: 48px;
@@ -340,6 +350,7 @@ input:focus-visible {
   .sidebar {
     position: absolute;
     height: 100%;
+    width: min(var(--sidebar-width), 86vw);
     box-shadow: 5px 0 15px rgba(0,0,0,0.5);
   }
 
@@ -358,7 +369,11 @@ input:focus-visible {
   }
 
   .top-nav {
-    padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+    padding:
+      8px
+      max(12px, env(safe-area-inset-right))
+      8px
+      max(12px, env(safe-area-inset-left));
   }
 
   .hide-on-mobile {
@@ -371,10 +386,6 @@ input:focus-visible {
 }
 
 @media (max-width: 420px) {
-  .sidebar {
-    width: min(260px, 86vw);
-  }
-
   .chat-item {
     gap: 6px;
   }

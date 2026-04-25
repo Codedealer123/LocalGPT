@@ -35,6 +35,13 @@ export let currentModel = writable(
 );
 export let aiWorker = null;
 
+/**
+ * @param {number} WPM 
+ */
+ 
+export let setWPM = (WPM) => { localStorage.setItem("wpm", String(WPM)) }
+export let wpm = +localStorage.getItem("wpm")
+
 let workerBootPromise = null;
 
 function attachWorkerListeners(worker) {

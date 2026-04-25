@@ -1,5 +1,6 @@
 <script>
   import { onDestroy, tick } from 'svelte';
+  import { wpm } from './js/store.js'
   import Input from './Input.svelte';
   import { currentChatMessages, postMessage, replyToUser } from './js/chats.js';
   import { currentModel, progress } from './js/store.js';
@@ -11,56 +12,55 @@
   let displayedStreamingReply = '';
   let messagesViewport;
   let typewriterTimer = null;
-  const typingSpeed = 220;
-  let typingStartedAt = 0;
 
-  function getWordSegments(text = '') {
+  function getWordTokens(text = '') {
     return String(text).match(/\S+\s*|\s+/g) ?? [];
   }
 
-  function getTextForWordCount(text, wordCount) {
-    const segments = getWordSegments(text);
-    let revealedWords = 0;
-    let result = '';
-
-    for (const segment of segments) {
-      result += segment;
-
-      if (/\S/.test(segment)) {
-        revealedWords += 1;
-      }
-
-      if (revealedWords >= wordCount) {
-        break;
-      }
+  function getNextTypedSlice(source = '', current = '') {
+    if (!source || current.length >= source.length) {
+      return source;
     }
 
-    return result;
+    const tokens = getWordTokens(source);
+    let built = '';
+
+    for (const token of tokens) {
+      const nextBuilt = built + token;
+
+      if (nextBuilt.length > current.length) {
+        return nextBuilt;
+      }
+
+      built = nextBuilt;
+    }
+
+    return source;
   }
 
   function syncTypewriter() {
-    if (!typingStartedAt) {
-      typingStartedAt = performance.now();
-    }
-
     if (typewriterTimer) {
       return;
     }
 
-    typewriterTimer = window.setInterval(() => {
-      const elapsedMinutes = Math.max((performance.now() - typingStartedAt) / 60000, 0);
-      const targetWordCount = Math.max(1, Math.floor(elapsedMinutes * typingSpeed));
-      const nextDisplayedReply = getTextForWordCount(streamingReply, targetWordCount);
+    const intervalMs = Math.max(40, Math.round(60000 / Math.max(wpm, 1)));
 
-      if (nextDisplayedReply.length > displayedStreamingReply.length) {
+    typewriterTimer = window.setInterval(() => {
+      if (!streamingReply) {
+        clearTypewriter();
+        return;
+      }
+
+      const nextDisplayedReply = getNextTypedSlice(streamingReply, displayedStreamingReply);
+
+      if (nextDisplayedReply !== displayedStreamingReply) {
         displayedStreamingReply = nextDisplayedReply;
       }
 
       if (displayedStreamingReply.length >= streamingReply.length) {
-        window.clearInterval(typewriterTimer);
-        typewriterTimer = null;
+        clearTypewriter();
       }
-    }, 33);
+    }, intervalMs);
   }
 
   function clearTypewriter() {
@@ -68,8 +68,6 @@
       window.clearInterval(typewriterTimer);
       typewriterTimer = null;
     }
-
-    typingStartedAt = 0;
   }
 
   async function scrollToBottom() {
@@ -124,7 +122,6 @@
   $: if (hasMessages || streamingReply || isThinking) {
     scrollToBottom();
   }
-  $: renderedStreamingReply = markdownToHtml(displayedStreamingReply);
   $: if (streamingReply.length < displayedStreamingReply.length) {
     displayedStreamingReply = streamingReply;
   }
@@ -150,8 +147,8 @@
       {#if streamingReply || isThinking}
         <div class="assistant-message">
           {#if streamingReply}
-            <div class="assistant-copy markdown-body is-typing">
-              {@html renderedStreamingReply}<span class="typing-caret" aria-hidden="true"></span>
+            <div class="assistant-copy typing-preview is-typing">
+              <span>{displayedStreamingReply}</span><span class="typing-caret" aria-hidden="true"></span>
             </div>
           {:else}
             <div class="assistant-loading" role="status" aria-live="polite">
@@ -193,9 +190,9 @@
     justify-content: center;
     padding:
       0
-      max(20px, env(safe-area-inset-right))
-      max(20px, env(safe-area-inset-bottom))
-      max(20px, env(safe-area-inset-left));
+      max(var(--page-padding, 20px), env(safe-area-inset-right))
+      max(var(--page-padding, 20px), env(safe-area-inset-bottom))
+      max(var(--page-padding, 20px), env(safe-area-inset-left));
     position: relative;
     overflow: hidden;
   }
@@ -213,7 +210,7 @@
 
   .chat-messages {
     width: 100%;
-    max-width: 768px;
+    max-width: var(--content-width, 768px);
     margin: 0 auto;
     padding: 20px 16px 120px;
     display: flex;
@@ -265,7 +262,7 @@
   }
 
   .is-typing {
-    position: relative;
+    display: inline;
   }
 
   .typing-caret {
@@ -277,6 +274,11 @@
     background-color: currentColor;
     opacity: 0.85;
     animation: blink 0.9s step-end infinite;
+  }
+
+  .typing-preview {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .markdown-body {
@@ -449,7 +451,7 @@
 
   .input-container {
     width: 100%;
-    max-width: 768px;
+    max-width: var(--content-width, 768px);
     box-sizing: border-box;
     flex-shrink: 0;
   }

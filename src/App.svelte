@@ -1,16 +1,13 @@
-<script>  
-  import MobileDetect from 'mobile-detect';
+<script>
+  import { onMount } from 'svelte';
   import Sidebar from './lib/Sidebar.svelte';
   import ModelSelector from './lib/ModelSelector.svelte';
   import Chat from './lib/Chat.svelte';
   import Icon from './lib/Icon.svelte';
 
-  import { selectedChatId, currentModel } from './lib/js/store.js';
+  import { selectedChatId } from './lib/js/store.js';
 
   let isSidebarOpen = true;
-  
-  const md = new MobileDetect(navigator.userAgent);
-  if (md.mobile()) isSidebarOpen = false
 
   function toggleSidebar() {
     isSidebarOpen = !isSidebarOpen;
@@ -19,6 +16,10 @@
   function closeSidebarOnMobile() {
     if (window.innerWidth <= 768) isSidebarOpen = false;
   }
+
+  onMount(() => {
+    isSidebarOpen = window.innerWidth > 768;
+  });
 </script>
 
 <a class="skip-link" href="#main-content">Skip to content</a>
