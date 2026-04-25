@@ -174,7 +174,7 @@
       <Input
         bind:promptInput
         onSend={sendPrompt}
-        disabled={isThinking || !$currentModel}
+        disabled={!promptInput.length || isThinking || !$currentModel}
       />
     </div>
   </div>

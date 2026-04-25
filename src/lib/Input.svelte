@@ -15,7 +15,6 @@
   enterkeyhint="send"
   autocapitalize="sentences"
   autocomplete="off"
-  disabled={disabled}
   on:keydown={(event) => event.key === 'Enter' && !disabled && onSend()}
 />
   
