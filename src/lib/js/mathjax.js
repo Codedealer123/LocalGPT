@@ -1,0 +1,386 @@
+import "mathjax/es5/tex-chtml.js";
+
+function escapeHtml(value = "") {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function sanitizeUrl(url = "") {
+  const value = String(url).trim();
+  return /^(https?:|mailto:|#|\/)/i.test(value) ? value : "#";
+}
+
+function extractMathTokens(text) {
+  const tokens = [];
+
+  text = text.replace(/\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$/g, (_, a, b) => {
+    const token = `__MATH_BLOCK_${tokens.length}__`;
+    tokens.push({ type: "block", content: (a ?? b).trim() });
+    return token;
+  });
+
+  text = text.replace(/\\\(([\s\S]*?)\\\)|\$([^\$\n]+?)\$/g, (_, a, b) => {
+    const token = `__MATH_INLINE_${tokens.length}__`;
+    tokens.push({ type: "inline", content: (a ?? b).trim() });
+    return token;
+  });
+
+  return { text, tokens };
+}
+
+function renderMathTokens(html, tokens) {
+  return html.replace(/__MATH_(BLOCK|INLINE)_(\d+)__/g, (_, type, i) => {
+    const { content, type: kind } = tokens[Number(i)];
+    const delimiter = kind === "block" ? ["\\[", "\\]"] : ["\\(", "\\)"];
+    return `${delimiter[0]}${content}${delimiter[1]}`;
+  });
+}
+
+function parseInline(text = "", tokens = []) {
+  const codeTokens = [];
+  let html = escapeHtml(text);
+
+  html = html.replace(/__MATH_(BLOCK|INLINE)_(\d+)__/g, (m) => m);
+
+  html = html.replace(/`([^`]+)`/g, (_, code) => {
+    const token = `__CODE_${codeTokens.length}__`;
+    codeTokens.push(`<code>${escapeHtml(code)}</code>`);
+    return token;
+  });
+
+  html = html.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) => {
+    return `<img src="${sanitizeUrl(src)}" alt="${escapeHtml(alt)}" />`;
+  });
+
+  html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
+    return `<a href="${sanitizeUrl(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+  });
+
+  html = html.replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>");
+  html = html.replace(/(\*\*|__)(.*?)\1/g, "<strong>$2</strong>");
+  html = html.replace(/(\*|_)(.*?)\1/g, "<em>$2</em>");
+  html = html.replace(/~~(.*?)~~/g, "<del>$1</del>");
+  html = html.replace(/==(.+?)==/g, "<mark>$1</mark>");
+  html = html.replace(/\^([^^\n]+)\^/g, "<sup>$1</sup>");
+  html = html.replace(/~([^~\n]+)~/g, "<sub>$1</sub>");
+  html = html.replace(/ {2}\n/g, "<br />");
+  html = html.replace(/\n/g, "<br />");
+
+  html = codeTokens.reduce(
+    (result, token, index) => result.replace(`__CODE_${index}__`, token),
+    html,
+  );
+
+  return html;
+}
+
+function getListItemMeta(line = "") {
+  const match = line.match(
+    /^(\s*)(?:([-*+])\s+(?:\[( |x|X)\]\s+)?|(\d+)\.\s+)(.*)$/,
+  );
+  if (!match) return null;
+
+  const indent = match[1]?.length ?? 0;
+  const checkbox = match[3];
+  const orderedStart = match[4];
+  const content = match[5] ?? "";
+
+  return {
+    indent,
+    checkbox,
+    orderedStart,
+    content,
+    kind:
+      checkbox !== undefined ? "task" : orderedStart ? "ordered" : "unordered",
+  };
+}
+
+function parseList(lines, startIndex, tokens) {
+  const firstItem = getListItemMeta(lines[startIndex]);
+  if (!firstItem) return null;
+
+  const items = [];
+  let index = startIndex;
+  const listKind = firstItem.kind;
+  const baseIndent = firstItem.indent;
+  const start = firstItem.orderedStart ? Number(firstItem.orderedStart) : 1;
+
+  while (index < lines.length) {
+    const item = getListItemMeta(lines[index]);
+    if (!item || item.indent !== baseIndent || item.kind !== listKind) break;
+
+    if (item.kind === "task") {
+      items.push(
+        `<li class="task-list-item"><input type="checkbox" disabled ${/x/i.test(item.checkbox) ? "checked" : ""} /> <span>${parseInline(item.content, tokens)}</span></li>`,
+      );
+    } else {
+      items.push(`<li>${parseInline(item.content, tokens)}</li>`);
+    }
+
+    index += 1;
+
+    while (index < lines.length) {
+      const continuation = lines[index];
+      if (!continuation.trim()) break;
+
+      const continuationItem = getListItemMeta(continuation);
+      const continuationIndent = continuation.match(/^(\s*)/)?.[1]?.length ?? 0;
+
+      if (continuationItem || continuationIndent <= baseIndent) break;
+
+      const previous = items.pop() ?? "";
+      items.push(
+        previous.replace(
+          "</li>",
+          `<br />${parseInline(continuation.trim(), tokens)}</li>`,
+        ),
+      );
+      index += 1;
+    }
+  }
+
+  const tag = listKind === "ordered" ? "ol" : "ul";
+  const startAttr = tag === "ol" && start > 1 ? ` start="${start}"` : "";
+  const classAttr = listKind === "task" ? ' class="task-list"' : "";
+
+  return {
+    nextIndex: index,
+    html: `<${tag}${startAttr}${classAttr}>${items.join("")}</${tag}>`,
+  };
+}
+
+function parseTable(lines, startIndex, tokens) {
+  if (startIndex + 1 >= lines.length) return null;
+  if (
+    !/\|/.test(lines[startIndex]) ||
+    !/^\s*\|?[\s:-|]+\|?\s*$/.test(lines[startIndex + 1])
+  ) {
+    return null;
+  }
+
+  const rows = [];
+  let index = startIndex;
+
+  while (
+    index < lines.length &&
+    /\|/.test(lines[index]) &&
+    lines[index].trim() !== ""
+  ) {
+    rows.push(lines[index]);
+    index += 1;
+  }
+
+  const splitRow = (line) =>
+    line
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((cell) => cell.trim());
+
+  const header = splitRow(rows[0]);
+  const body = rows.slice(2).map(splitRow);
+
+  return {
+    nextIndex: index,
+    html:
+      `<table><thead><tr>${header.map((cell) => `<th>${parseInline(cell, tokens)}</th>`).join("")}</tr></thead>` +
+      `<tbody>${body.map((row) => `<tr>${row.map((cell) => `<td>${parseInline(cell, tokens)}</td>`).join("")}</tr>`).join("")}</tbody></table>`,
+  };
+}
+
+function extractThinkBlock(markdown) {
+  const closed = markdown.match(/^<think>([\s\S]*?)<\/think>\n*/);
+  if (closed) {
+    return {
+      think: closed[1].trim(),
+      rest: markdown.slice(closed[0].length),
+      open: false,
+    };
+  }
+
+  const open = markdown.match(/^<think>([\s\S]*)/);
+  if (open) {
+    return { think: open[1].trim(), rest: "", open: true };
+  }
+
+  return { think: null, rest: markdown, open: false };
+}
+
+let mathjaxReady = false;
+let mathjaxQueue = [];
+
+if (typeof window !== "undefined") {
+  window.MathJax = {
+    tex: {
+      inlineMath: [
+        ["\\(", "\\)"],
+        ["$", "$"],
+      ],
+      displayMath: [
+        ["\\[", "\\]"],
+        ["$$", "$$"],
+      ],
+    },
+    startup: {
+      ready() {
+        window.MathJax.startup.defaultReady();
+        mathjaxReady = true;
+        mathjaxQueue.forEach((fn) => fn());
+        mathjaxQueue = [];
+      },
+    },
+  };
+}
+
+export function typeset(element) {
+  if (!element) return;
+  const run = () => window.MathJax?.typesetPromise?.([element]);
+  if (mathjaxReady) run();
+  else mathjaxQueue.push(run);
+}
+
+export function mathjaxToHtml(markdown = "", appendHtml = "") {
+  const { think, rest, open } = extractThinkBlock(
+    String(markdown).replace(/\r\n/g, "\n"),
+  );
+  let source = rest;
+  let mathTokens = [];
+
+  const extracted = extractMathTokens(source);
+  source = extracted.text;
+  mathTokens = extracted.tokens;
+
+  const lines = source.split("\n");
+  const blocks = [];
+
+  for (let index = 0; index < lines.length; ) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    if (/^__MATH_BLOCK_\d+__$/.test(trimmed)) {
+      blocks.push(
+        `<div class="math-block">${renderMathTokens(trimmed, mathTokens)}</div>`,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (/^```/.test(trimmed)) {
+      const language = trimmed.slice(3).trim();
+      const codeLines = [];
+      index += 1;
+
+      while (index < lines.length && !/^```/.test(lines[index].trim())) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+
+      if (index < lines.length) index += 1;
+      blocks.push(
+        `<pre><code${language ? ` class="language-${escapeHtml(language)}"` : ""}>${escapeHtml(codeLines.join("\n"))}</code></pre>`,
+      );
+      continue;
+    }
+
+    const table = parseTable(lines, index, mathTokens);
+    if (table) {
+      blocks.push(table.html);
+      index = table.nextIndex;
+      continue;
+    }
+
+    if (/^\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+\.\s+)/.test(line)) {
+      const list = parseList(lines, index, mathTokens);
+      if (!list) {
+        index += 1;
+        continue;
+      }
+      blocks.push(list.html);
+      index = list.nextIndex;
+      continue;
+    }
+
+    if (/^>\s?/.test(trimmed)) {
+      const quoteLines = [];
+      while (index < lines.length && /^>\s?/.test(lines[index].trim())) {
+        quoteLines.push(lines[index].trim().replace(/^>\s?/, ""));
+        index += 1;
+      }
+      blocks.push(
+        `<blockquote>${quoteLines.map((q) => `<p>${parseInline(q, mathTokens)}</p>`).join("")}</blockquote>`,
+      );
+      continue;
+    }
+
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      const [, hashes, content] = trimmed.match(/^(#{1,6})\s+(.*)$/);
+      const level = hashes.length;
+      blocks.push(`<h${level}>${parseInline(content, mathTokens)}</h${level}>`);
+      index += 1;
+      continue;
+    }
+
+    if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
+      blocks.push("<hr />");
+      index += 1;
+      continue;
+    }
+
+    const paragraph = [];
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !/^```/.test(lines[index].trim()) &&
+      !/^>\s?/.test(lines[index].trim()) &&
+      !/^#{1,6}\s+/.test(lines[index].trim()) &&
+      !/^\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+\.\s+)/.test(lines[index]) &&
+      !(
+        /\|/.test(lines[index]) &&
+        index + 1 < lines.length &&
+        /^\s*\|?[\s:-|]+\|?\s*$/.test(lines[index + 1])
+      )
+    ) {
+      paragraph.push(lines[index]);
+      index += 1;
+    }
+
+    const paraHtml = parseInline(paragraph.join("\n"), mathTokens);
+    blocks.push(`<p>${renderMathTokens(paraHtml, mathTokens)}</p>`);
+  }
+
+  const rendered = blocks.map((b) => renderMathTokens(b, mathTokens));
+
+  if (!appendHtml) {
+    const thinkHtml = think
+      ? `<details class="think-block" ${open ? "open" : ""}><summary>${open ? "Thinking…" : "Thinking"}</summary><div class="think-body">${mathjaxToHtml(think)}</div></details>`
+      : "";
+    return thinkHtml + rendered.join("");
+  }
+
+  if (rendered.length === 0) return `<p>${appendHtml}</p>`;
+
+  const last = rendered[rendered.length - 1];
+  const closing = last.match(/<\/([a-z][a-z0-9]*)>$/i);
+  if (closing) {
+    rendered[rendered.length - 1] =
+      last.slice(0, -closing[0].length) + appendHtml + closing[0];
+  } else {
+    rendered[rendered.length - 1] = last + appendHtml;
+  }
+
+  const thinkHtml = think
+    ? `<details class="think-block" ${open ? "open" : ""}><summary>${open ? "Thinking…" : "Thinking"}</summary><div class="think-body">${mathjaxToHtml(think)}</div></details>`
+    : "";
+
+  return thinkHtml + rendered.join("");
+}
