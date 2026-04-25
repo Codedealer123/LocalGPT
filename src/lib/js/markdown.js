@@ -54,7 +54,6 @@ function parseInline(text = "", tokens = []) {
   const codeTokens = [];
   let html = escapeHtml(text);
 
-  // Restore math tokens before escaping inline content
   html = html.replace(/__MATH_(BLOCK|INLINE)_(\d+)__/g, (m) => m);
 
   html = html.replace(/`([^`]+)`/g, (_, code) => {
@@ -85,6 +84,11 @@ function parseInline(text = "", tokens = []) {
     (result, token, index) => result.replace(`__CODE_${index}__`, token),
     html
   );
+
+  // Render math tokens at the end after all other inline processing
+  if (tokens.length > 0) {
+    html = renderMathTokens(html, tokens);
+  }
 
   return html;
 }

@@ -5,6 +5,7 @@ import mkcert from 'vite-plugin-mkcert'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [svelte(), mkcert()],
+  base: '/LocalGPT/',
   server: {
     https: true
   }  
