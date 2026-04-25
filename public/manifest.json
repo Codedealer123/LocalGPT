@@ -5,7 +5,7 @@
   "short_name": "LocalGPT",
   "display": "standalone",
   "orientation": "landscape",
-  "start_url": "/LocalGPT?PWA=true",
+  "start_url": "/?PWA=true",
   "scope": "/LocalGPT",
   "lang": "en",
   "dir": "auto",
