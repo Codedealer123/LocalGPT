@@ -17,7 +17,20 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+html {
+  height: 100%;
+  block-size: 100%;
+  overflow: hidden;
+}
+
+body,
+#app {
+  height: 100%;
+  overflow: hidden;
+}
+
 * {
+  box-sizing: border-box;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -31,11 +44,10 @@ body {
 .app-container {
   display: flex;
   height: 100vh;
-  width: 100vw;
+  height: 100dvh;
+  width: 100%;
   overflow: hidden;
-  position: fixed;
-  top: 0;
-  left: 0;
+  position: relative;
 }
 
 .sidebar {
@@ -123,10 +135,23 @@ body {
   font-size: 14px;
   font-weight: 500;
   color: #ececec;
-  cursor: pointer;
   user-select: none;
   background-color: transparent;
   transition: background-color 0.15s ease, transform 0.05s ease;
+}
+
+.chat-select-btn {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
 }
 
 .deleteBtn {
@@ -144,14 +169,11 @@ body {
 
 .chat-item:hover {
   background-color: rgba(48, 48, 48);
-  .deleteBtn {
-      background: none;
-      border: none;
-      align-items: center;
-      margin-bottom: -5px;
-      visibility: visible;
-      transition: opacity 0.25s ease, transform 0.25s ease;
-  }
+}
+
+.chat-item:hover .deleteBtn,
+.chat-item:focus-within .deleteBtn {
+  visibility: visible;
 }
 
 .chat-item span {
@@ -165,7 +187,22 @@ body {
   padding: 0px 12px
 }
 
+.skip-link {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  transform: translateY(-200%);
+  background: #ececec;
+  color: #212121;
+  padding: 8px 12px;
+  border-radius: 8px;
+  z-index: 1000;
+  text-decoration: none;
+}
 
+.skip-link:focus {
+  transform: translateY(0);
+}
 
 .deleteIcon {
     align-self: center;
@@ -240,19 +277,24 @@ body {
   background-color: #212121;
   position: relative;
   width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .top-nav {
-  padding: 16px 20px;
+  padding: 16px max(20px, env(safe-area-inset-right)) 16px max(20px, env(safe-area-inset-left));
   display: flex;
   align-items: center;
   min-height: 48px;
+  flex-shrink: 0;
 }
 
 .left-nav-group {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .model-selector {
@@ -287,6 +329,13 @@ body {
   transition: background-color 0.2s, color 0.2s;
 }
 
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 2px solid rgba(236, 236, 236, 0.65);
+  outline-offset: 2px;
+}
+
 @media (max-width: 768px) {
   .sidebar {
     position: absolute;
@@ -309,16 +358,34 @@ body {
   }
 
   .top-nav {
-    padding: 8px 12px;
+    padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
   }
 
   .hide-on-mobile {
     display: none;
+  }
+
+  .left-nav-group {
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .sidebar {
+    width: min(260px, 86vw);
+  }
+
+  .chat-item {
+    gap: 6px;
   }
 }
 
 @media (max-width: 480px) {
   .hide-on-small {
     display: none;
+  }
+
+  .top-nav {
+    min-height: 44px;
   }
 }

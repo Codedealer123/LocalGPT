@@ -29,17 +29,19 @@
 
 <button
   class="sidebar-backdrop {isOpen ? 'visible' : ''}"
+  type="button"
   on:click={toggleSidebar}
+  aria-label="Close sidebar"
   title="Close sidebar"
 ></button>
 
 <aside class="sidebar {isOpen ? 'open' : 'closed'}">
   <div class="sidebar-top">
     <div class="top-actions">
-      <button class="icon-btn" on:click={toggleSidebar} aria-label="Close sidebar">
+      <button type="button" class="icon-btn" on:click={toggleSidebar} aria-label="Close sidebar">
         <Icon name="toggleSidebar" width="24" height="24" />
       </button>
-      <button class="new-chat-btn" on:click={() => handleNewChat()}>
+      <button type="button" class="new-chat-btn" on:click={() => handleNewChat()}>
         <Icon name="pencil" width="20" height="20" />
         <span class="hide-on-mobile">New chat</span>
       </button>
@@ -48,13 +50,24 @@
       <span class="section-title">Your chats</span>
       <ul>
         {#each $chats as chat}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <li class="chat-item {chat.id === selectedChat ? 'selected' : ''}" id={chat.id} on:click={() => selectChat(chat.id)}>
-            <span class="chat-title">{chat.title}</span>
-            
-            <button id="deleteBtn" class="deleteBtn" on:click={() => deleteChat(chat.id)}>
-                <Icon classes="deleteIcon" name="trashcan" width="24" height="24" />
+          <li class="chat-item {chat.id === selectedChat ? 'selected' : ''}" id={chat.id}>
+            <button
+              type="button"
+              class="chat-select-btn"
+              aria-current={chat.id === selectedChat ? 'page' : undefined}
+              aria-label={`Open chat ${chat.title}`}
+              on:click={() => selectChat(chat.id)}
+            >
+              <span class="chat-title">{chat.title}</span>
+            </button>
+
+            <button
+              type="button"
+              class="deleteBtn"
+              aria-label={`Delete chat ${chat.title}`}
+              on:click={() => deleteChat(chat.id)}
+            >
+              <Icon classes="deleteIcon" name="trashcan" width="24" height="24" />
             </button>
           </li>
         {/each}
@@ -63,7 +76,7 @@
   </div>
 
   <div class="sidebar-bottom">
-    <button class="user-profile" on:click={closeSidebarOnMobile}>
+    <button type="button" class="user-profile" on:click={closeSidebarOnMobile}>
       <div class="avatar">MU</div>
       <span class="username">Mukilan</span>
     </button>

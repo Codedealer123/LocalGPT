@@ -1,16 +1,16 @@
 <script>
   import { onDestroy, tick } from 'svelte';
-  import { availableModels, currentModel } from './js/store.js';
+  import { availableModels, currentModel, modelsLoaded, warmAIWorker } from './js/store.js';
   import { formatModelName, getModelHint } from './js/format.js';
   import { isModelRecommended } from './js/recommendModels.js';
   import Icon from './Icon.svelte';
-  import * as bootstrap from 'bootstrap';
 
   let dropdownOpen = false;
   let filterText = "";
   let tooltipInstances = [];
   let activeIndex = -1;
   let optionRefs = [];
+  let BootstrapTooltip = null;
 
   const listboxId = "model-selector-listbox";
 
@@ -54,6 +54,10 @@
   $: optionRefs = [];
 
   function toggleDropdown() {
+    if (!dropdownOpen && !$modelsLoaded) {
+      warmAIWorker();
+    }
+
     dropdownOpen = !dropdownOpen;
     activeIndex = dropdownOpen && visibleModels.length ? 0 : -1;
   }
@@ -65,7 +69,6 @@
 
   function selectModel(model) {
     currentModel.set(model.model_id);
-    localStorage.setItem("currentModel", model.model_id);
     closeDropdown();
     filterText = "";
   }
@@ -110,16 +113,21 @@
     });
   }
 
-  function initTooltips() {
+  async function initTooltips() {
+    if (!BootstrapTooltip) {
+      const bootstrap = await import('bootstrap/js/dist/tooltip');
+      BootstrapTooltip = bootstrap.default;
+    }
+
     tooltipInstances.forEach((t) => t.dispose());
     tooltipInstances = [];
 
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
-      const existing = bootstrap.Tooltip.getInstance(el);
+      const existing = BootstrapTooltip.getInstance(el);
       if (existing) existing.dispose();
 
       tooltipInstances.push(
-        new bootstrap.Tooltip(el, {
+        new BootstrapTooltip(el, {
           offset: [0, 8],
           customClass: 'custom-tooltip'
         })
@@ -132,7 +140,9 @@
   }
 
   $: if (dropdownOpen) {
-    tick().then(initTooltips);
+    tick().then(() => {
+      void initTooltips();
+    });
   }
 
   $: if (dropdownOpen && activeIndex >= visibleModels.length) {
@@ -165,6 +175,7 @@
         type="search"
         class="model-search"
         placeholder="Filter models..."
+        aria-label="Filter available models"
         bind:value={filterText}
       />
     </div>
@@ -189,12 +200,15 @@
             on:click={() => selectModel(model)}
             data-bs-toggle="tooltip"
             data-bs-placement="right"
+            aria-label={`${getLabel(model)}. ${getModelHint(model.model_id)}`}
             title={getModelHint(model.model_id)}
           >
             {getLabel(model)}
           </button>
         {/each}
       </div>
+    {:else if !$modelsLoaded}
+      <div class="empty-state">Loading models...</div>
     {:else}
       <div class="empty-state">No models found</div>
     {/if}
@@ -233,7 +247,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 320px;
+    max-width: min(320px, 52vw);
   }
 
   .model-dropdown {
@@ -315,5 +329,16 @@
 
   :global(.custom-tooltip.bs-tooltip-end .tooltip-arrow::before) {
     border-right-color: #2d2d2d;
+  }
+
+  @media (max-width: 768px) {
+    .model-selector-label {
+      max-width: min(240px, 58vw);
+    }
+
+    .model-dropdown {
+      min-width: min(260px, calc(100vw - 24px));
+      max-width: calc(100vw - 24px);
+    }
   }
 </style>

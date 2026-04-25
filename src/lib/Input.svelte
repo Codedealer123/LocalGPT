@@ -11,24 +11,21 @@
   placeholder="Ask anything"
   class="prompt-input"
   bind:value={promptInput}
+  aria-label="Message input"
+  enterkeyhint="send"
+  autocapitalize="sentences"
+  autocomplete="off"
+  disabled={disabled}
   on:keydown={(event) => event.key === 'Enter' && !disabled && onSend()}
 />
   
 <div class="right-actions">
-  <button class="icon-btn solid-btn" aria-label="Send message" on:click={onSend} disabled={disabled}>
+  <button type="button" class="icon-btn solid-btn" aria-label="Send message" on:click={onSend} disabled={disabled}>
     <Icon name="send" width="18" height="18" />
   </button>
 </div>
 
 <style>
-    @font-face {
-      font-family: 'Sohne Buch';
-      font-style: normal;
-      font-weight: 500;
-      font-display: swap;
-      src: url('./fonts/SohneBuch.otf') format('opentype');
-    }
-    
     .prompt-input {
       flex: 1;
       background: transparent;
@@ -40,13 +37,15 @@
       min-width: 0;
     }
     
+    .prompt-input:focus {
+        outline: none;
+        border-color: inherit;
+        box-shadow: none;
+        -webkit-box-shadow: none;
+    }
+    
     .prompt-input::placeholder {
       color: #8e8e8e;
-    }
-
-    .prompt-input:disabled {
-      opacity: 0.7;
-      cursor: not-allowed;
     }
     
     .right-actions {
@@ -71,6 +70,12 @@
     .icon-btn:hover {
       background-color: rgba(255, 255, 255, 0.1);
       color: #ececec;
+    }
+
+    .icon-btn:focus-visible,
+    .prompt-input:focus-visible {
+      outline: 2px solid rgba(236, 236, 236, 0.65);
+      outline-offset: 2px;
     }
     
     .solid-btn {

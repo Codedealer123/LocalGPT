@@ -1,11 +1,15 @@
 import { get } from "svelte/store";
-import { currentModel, aiWorker, selectedChatId } from "./store.js";
+import { currentModel, aiWorker, ensureAIWorker, selectedChatId } from "./store.js";
 import { getChatMessages } from "./chats.js";
 
 let nextRequestId = 1;
 
 export function askAI(options = {}) {
     return new Promise(async (resolve, reject) => {
+        if (!aiWorker) {
+            await ensureAIWorker();
+        }
+
         if (!aiWorker) {
             return reject("AI worker is not available");
         }

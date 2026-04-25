@@ -1,5 +1,5 @@
 <script>
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import Input from './Input.svelte';
   import { currentChatMessages, postMessage, replyToUser } from './js/chats.js';
   import { currentModel, progress } from './js/store.js';
@@ -8,7 +8,69 @@
   let promptInput = '';
   let isThinking = false;
   let streamingReply = '';
+  let displayedStreamingReply = '';
   let messagesViewport;
+  let typewriterTimer = null;
+  const typingSpeed = 220;
+  let typingStartedAt = 0;
+
+  function getWordSegments(text = '') {
+    return String(text).match(/\S+\s*|\s+/g) ?? [];
+  }
+
+  function getTextForWordCount(text, wordCount) {
+    const segments = getWordSegments(text);
+    let revealedWords = 0;
+    let result = '';
+
+    for (const segment of segments) {
+      result += segment;
+
+      if (/\S/.test(segment)) {
+        revealedWords += 1;
+      }
+
+      if (revealedWords >= wordCount) {
+        break;
+      }
+    }
+
+    return result;
+  }
+
+  function syncTypewriter() {
+    if (!typingStartedAt) {
+      typingStartedAt = performance.now();
+    }
+
+    if (typewriterTimer) {
+      return;
+    }
+
+    typewriterTimer = window.setInterval(() => {
+      const elapsedMinutes = Math.max((performance.now() - typingStartedAt) / 60000, 0);
+      const targetWordCount = Math.max(1, Math.floor(elapsedMinutes * typingSpeed));
+      const nextDisplayedReply = getTextForWordCount(streamingReply, targetWordCount);
+
+      if (nextDisplayedReply.length > displayedStreamingReply.length) {
+        displayedStreamingReply = nextDisplayedReply;
+      }
+
+      if (displayedStreamingReply.length >= streamingReply.length) {
+        window.clearInterval(typewriterTimer);
+        typewriterTimer = null;
+      }
+    }, 33);
+  }
+
+  function clearTypewriter() {
+    if (typewriterTimer) {
+      window.clearInterval(typewriterTimer);
+      typewriterTimer = null;
+    }
+
+    typingStartedAt = 0;
+  }
 
   async function scrollToBottom() {
     await tick();
@@ -24,7 +86,9 @@
     }
 
     promptInput = '';
+    clearTypewriter();
     streamingReply = '';
+    displayedStreamingReply = '';
     isThinking = true;
 
     try {
@@ -34,13 +98,18 @@
       await replyToUser({
         onStream: ({ full }) => {
           streamingReply = full ?? '';
+          syncTypewriter();
           void scrollToBottom();
         }
       });
 
+      displayedStreamingReply = streamingReply;
+      clearTypewriter();
       streamingReply = '';
     } catch (error) {
+      clearTypewriter();
       streamingReply = '';
+      displayedStreamingReply = '';
       await postMessage(`Error: ${error?.message ?? error}`, 'assistant');
     } finally {
       isThinking = false;
@@ -55,12 +124,19 @@
   $: if (hasMessages || streamingReply || isThinking) {
     scrollToBottom();
   }
-  $: renderedStreamingReply = markdownToHtml(streamingReply);
+  $: renderedStreamingReply = markdownToHtml(displayedStreamingReply);
+  $: if (streamingReply.length < displayedStreamingReply.length) {
+    displayedStreamingReply = streamingReply;
+  }
+
+  onDestroy(() => {
+    clearTypewriter();
+  });
 </script>
 
-<section class="chat-area">
+<section class="chat-area" aria-label="Chat conversation">
   {#if hasMessages || streamingReply || isThinking}
-    <div class="chat-messages" bind:this={messagesViewport}>
+    <div class="chat-messages" bind:this={messagesViewport} aria-live="polite" aria-busy={isThinking}>
       {#each messages as message (message.id)}
         <div class={message.role === 'user' ? 'user-message' : 'assistant-message'}>
           {#if message.role === 'user'}
@@ -74,9 +150,11 @@
       {#if streamingReply || isThinking}
         <div class="assistant-message">
           {#if streamingReply}
-            <div class="assistant-copy markdown-body">{@html renderedStreamingReply}</div>
+            <div class="assistant-copy markdown-body is-typing">
+              {@html renderedStreamingReply}<span class="typing-caret" aria-hidden="true"></span>
+            </div>
           {:else}
-            <div class="assistant-loading">
+            <div class="assistant-loading" role="status" aria-live="polite">
               <div class="thinking-dots" aria-label="AI is responding">
                 <span></span>
                 <span></span>
@@ -113,8 +191,13 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 0 20px 20px;
+    padding:
+      0
+      max(20px, env(safe-area-inset-right))
+      max(20px, env(safe-area-inset-bottom))
+      max(20px, env(safe-area-inset-left));
     position: relative;
+    overflow: hidden;
   }
 
   .greeting {
@@ -132,7 +215,7 @@
     width: 100%;
     max-width: 768px;
     margin: 0 auto;
-    padding: 20px 16px 120px 16px;
+    padding: 20px 16px 120px;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -165,7 +248,7 @@
     padding: 12px 20px;
     border-radius: 25px;
     display: inline-block;
-    max-width: 70%;
+    max-width: min(70%, 100%);
     font-family: sans-serif;
     white-space: pre-wrap;
   }
@@ -179,6 +262,21 @@
     font-family: sans-serif;
     line-height: 1.6;
     white-space: pre-wrap;
+  }
+
+  .is-typing {
+    position: relative;
+  }
+
+  .typing-caret {
+    display: inline-block;
+    width: 0.6ch;
+    height: 1.1em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background-color: currentColor;
+    opacity: 0.85;
+    animation: blink 0.9s step-end infinite;
   }
 
   .markdown-body {
@@ -353,6 +451,7 @@
     width: 100%;
     max-width: 768px;
     box-sizing: border-box;
+    flex-shrink: 0;
   }
 
   .input-wrapper {
@@ -375,6 +474,12 @@
     box-shadow: 0 0 15px rgba(0,0,0,0.1);
   }
 
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
   @keyframes bounce {
     0%, 80%, 100% {
       transform: translateY(0);
@@ -389,16 +494,46 @@
 
   @media (max-width: 768px) {
     .chat-area {
-      padding: 0 16px 16px;
+      padding:
+        0
+        max(16px, env(safe-area-inset-right))
+        max(16px, env(safe-area-inset-bottom))
+        max(16px, env(safe-area-inset-left));
     }
 
     .greeting {
       font-size: 24px;
     }
 
+    .chat-messages {
+      padding-bottom: 96px;
+    }
+
     .input-wrapper,
     .chat-input-wrapper {
       padding: 6px 12px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .user-bubble {
+      max-width: 85%;
+    }
+
+    .chat-messages {
+      padding-left: 4px;
+      padding-right: 4px;
+    }
+  }
+
+  @media (max-height: 540px) {
+    .greeting {
+      margin-bottom: 24px;
+      font-size: 22px;
+    }
+
+    .chat-messages {
+      padding-top: 8px;
     }
   }
 </style>

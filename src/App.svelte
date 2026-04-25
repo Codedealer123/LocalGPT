@@ -1,4 +1,5 @@
-<script>
+<script>  
+  import MobileDetect from 'mobile-detect';
   import Sidebar from './lib/Sidebar.svelte';
   import ModelSelector from './lib/ModelSelector.svelte';
   import Chat from './lib/Chat.svelte';
@@ -7,6 +8,9 @@
   import { selectedChatId, currentModel } from './lib/js/store.js';
 
   let isSidebarOpen = true;
+  
+  const md = new MobileDetect(navigator.userAgent);
+  if (md.mobile()) isSidebarOpen = false
 
   function toggleSidebar() {
     isSidebarOpen = !isSidebarOpen;
@@ -17,6 +21,8 @@
   }
 </script>
 
+<a class="skip-link" href="#main-content">Skip to content</a>
+
 <div class="app-container">
   <Sidebar
     isOpen={isSidebarOpen}
@@ -25,12 +31,12 @@
     selectedChat={$selectedChatId}
   />
 
-  <main class="main-content">
+  <main id="main-content" class="main-content">
     <header class="top-nav">
       <div class="left-nav-group">
 
         {#if !isSidebarOpen}
-          <button class="icon-btn" on:click={toggleSidebar}>
+          <button type="button" class="icon-btn" on:click={toggleSidebar} aria-label="Open sidebar">
             <Icon name="toggleSidebar" width="24" height="24" />
           </button>
         {/if}

@@ -46,33 +46,70 @@ function parseInline(text = "") {
   );
 }
 
+function getListItemMeta(line = "") {
+  const match = line.match(/^(\s*)(?:([-*+])\s+(?:\[( |x|X)\]\s+)?|(\d+)\.\s+)(.*)$/);
+  if (!match) return null;
+
+  const indent = match[1]?.length ?? 0;
+  const checkbox = match[3];
+  const orderedStart = match[4];
+  const content = match[5] ?? '';
+
+  return {
+    indent,
+    checkbox,
+    orderedStart,
+    content,
+    kind: checkbox !== undefined ? 'task' : orderedStart ? 'ordered' : 'unordered',
+  };
+}
+
 function parseList(lines, startIndex) {
+  const firstItem = getListItemMeta(lines[startIndex]);
+  if (!firstItem) return null;
+
   const items = [];
   let index = startIndex;
+  const listKind = firstItem.kind;
+  const baseIndent = firstItem.indent;
+  const start = firstItem.orderedStart ? Number(firstItem.orderedStart) : 1;
 
   while (index < lines.length) {
-    const match = lines[index].match(/^\s*(?:[-*+]\s+(?:\[( |x|X)\]\s+)?|(\d+)\.\s+)(.*)$/);
-    if (!match) break;
+    const item = getListItemMeta(lines[index]);
+    if (!item || item.indent !== baseIndent || item.kind !== listKind) break;
 
-    const checkbox = match[1];
-    const ordered = match[2];
-    const content = match[3] ?? '';
-
-    if (checkbox !== undefined) {
+    if (item.kind === 'task') {
       items.push(
-        `<li class="task-list-item"><input type="checkbox" disabled ${/x/i.test(checkbox) ? 'checked' : ''} /> <span>${parseInline(content)}</span></li>`
+        `<li class="task-list-item"><input type="checkbox" disabled ${/x/i.test(item.checkbox) ? 'checked' : ''} /> <span>${parseInline(item.content)}</span></li>`
       );
     } else {
-      items.push(`<li>${parseInline(content)}</li>`);
+      items.push(`<li>${parseInline(item.content)}</li>`);
     }
 
     index += 1;
+
+    while (index < lines.length) {
+      const continuation = lines[index];
+      if (!continuation.trim()) break;
+
+      const continuationItem = getListItemMeta(continuation);
+      const continuationIndent = continuation.match(/^(\s*)/)?.[1]?.length ?? 0;
+
+      if (continuationItem || continuationIndent <= baseIndent) break;
+
+      const previous = items.pop() ?? '';
+      items.push(previous.replace('</li>', `<br />${parseInline(continuation.trim())}</li>`));
+      index += 1;
+    }
   }
 
-  const tag = /^\s*\d+\.\s+/.test(lines[startIndex]) ? 'ol' : 'ul';
+  const tag = listKind === 'ordered' ? 'ol' : 'ul';
+  const startAttr = tag === 'ol' && start > 1 ? ` start="${start}"` : '';
+  const classAttr = listKind === 'task' ? ' class="task-list"' : '';
+
   return {
     nextIndex: index,
-    html: `<${tag}>${items.join('')}</${tag}>`
+    html: `<${tag}${startAttr}${classAttr}>${items.join('')}</${tag}>`
   };
 }
 
@@ -148,6 +185,10 @@ export function markdownToHtml(markdown = "") {
 
     if (/^\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+\.\s+)/.test(line)) {
       const list = parseList(lines, index);
+      if (!list) {
+        index += 1;
+        continue;
+      }
       blocks.push(list.html);
       index = list.nextIndex;
       continue;
