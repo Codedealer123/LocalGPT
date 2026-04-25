@@ -148,7 +148,7 @@ function parseTable(lines, startIndex) {
   };
 }
 
-export function markdownToHtml(markdown = "") {
+export function markdownToHtml(markdown = "", appendHtml = "") {
   const lines = String(markdown).replace(/\r\n/g, '\n').split('\n');
   const blocks = [];
 
@@ -233,6 +233,18 @@ export function markdownToHtml(markdown = "") {
     }
 
     blocks.push(`<p>${parseInline(paragraph.join('\n'))}</p>`);
+  }
+
+  if (!appendHtml) return blocks.join('');
+
+  if (blocks.length === 0) return `<p>${appendHtml}</p>`;
+
+  const last = blocks[blocks.length - 1];
+  const closing = last.match(/<\/([a-z][a-z0-9]*)>$/i);
+  if (closing) {
+    blocks[blocks.length - 1] = last.slice(0, -closing[0].length) + appendHtml + closing[0];
+  } else {
+    blocks[blocks.length - 1] = last + appendHtml;
   }
 
   return blocks.join('');

@@ -1,25 +1,35 @@
 <script>
   import { get } from 'svelte/store';
   import { chats, createChat, deleteChat, syncChats, setCurrentChatId } from './js/chats.js';
-  import {
-    twoLettersToColor,
-    authReady,
-    authUser,
-    getUserAvatarText,
-    getUserDisplayName,
-    signInWithPassword,
-    signUpWithPassword,
-    signOut,
-  } from './js/auth.js';
-  import { showAuthPrompt, showConfirm, showNotice, showPrompt } from './js/prompt.js';
+  import { showConfirm, showNotice, showPrompt } from './js/prompt.js';
   import { onMount } from 'svelte';
   import Icon from './Icon.svelte';
-    import { AuthInvalidTokenResponseError } from '@supabase/supabase-js';
 
   export let isOpen = true;
   export let toggleSidebar = () => {};
   export let closeSidebarOnMobile = () => {};
   export let selectedChat = null;
+
+  let username = localStorage.getItem('username') || '';
+
+  function setUsername(name) {
+    username = name;
+    if (username) {
+      localStorage.setItem('username', username);
+    } else {
+      localStorage.removeItem('username');
+    }
+  }
+
+  function getInitials(name) {
+    if (!name) return 'G';
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  }
 
   function selectChat(id) {
     selectedChat = id;
@@ -27,7 +37,11 @@
   }
 
   async function handleNewChat() {
-    const chatTitle = await showPrompt({ message: "Enter chat title", placeholder: "New Chat" });
+    const chatTitle = await showPrompt({
+      message: "Enter chat title",
+      placeholder: "New Chat"
+    });
+
     if (chatTitle && chatTitle.trim() !== "") {
       const chatId = await createChat(chatTitle.trim());
       selectChat(chatId);
@@ -35,73 +49,60 @@
   }
 
   async function handleProfileAction() {
-    if (!$authReady) {
-      return;
-    }
-
-    if (get(authUser)) {
-      const confirmed = await showConfirm({
-        title: 'Sign out?',
-        message: `You are currently signed in as ${profileName}. Do you want to sign out now?`,
-        confirmText: 'Sign out',
-        cancelText: 'Stay signed in',
+    if (!username) {
+      const name = await showPrompt({
+        message: "Pick a username",
+        placeholder: "Your name"
       });
 
-      if (!confirmed) {
-        return;
-      }
+      if (name && name.trim()) {
+        setUsername(name.trim());
 
-      try {
-        await signOut();
-        closeSidebarOnMobile();
-      } catch (error) {
         await showNotice({
-          title: 'Could not sign out',
-          message: error?.message ?? 'Something went wrong while signing out.',
+          title: "Welcome",
+          message: `Hey ${name.trim()}, you're all set.`,
+          buttonText: "Ok"
         });
-      }
-      return;
-    }
-
-    const authInput = await showAuthPrompt();
-
-    if (!authInput) {
-      return;
-    }
-
-    try {
-      if (authInput.mode === 'signup') {
-        const signUpResult = await signUpWithPassword(authInput.name, authInput.email, authInput.password);
-
-        if (signUpResult.needsEmailConfirmation) {
-          await showNotice({
-            title: 'Confirm your email',
-            message: `Your account has been created for ${authInput.email}. Open your inbox and click the confirmation link before signing in. If you change this site URL later, make sure that new URL is also added to your Supabase Auth redirect settings.`,
-            buttonText: 'Got it',
-          });
-        } else {
-          await showNotice({
-            title: 'Account created',
-            message: `Welcome, ${authInput.name}. Your account is ready and you are already signed in.`,
-            buttonText: 'Continue',
-          });
-        }
-      } else {
-        await signInWithPassword(authInput.email, authInput.password);
       }
 
       closeSidebarOnMobile();
-    } catch (error) {
+      return;
+    }
+
+    const action = await showConfirm({
+      title: "Profile",
+      message: `You're signed in as ${username}. Want to change or clear it?`,
+      confirmText: "Change name",
+      cancelText: "Logout"
+    });
+
+    if (action) {
+      const newName = await showPrompt({
+        message: "Enter new username",
+        placeholder: username
+      });
+
+      if (newName && newName.trim()) {
+        setUsername(newName.trim());
+      }
+    } else {
+      setUsername('');
+
       await showNotice({
-        title: 'Authentication failed',
-        message: error?.message ?? 'We could not complete your sign-in request.',
+        title: "Logged out",
+        message: "Username removed from this device.",
+        buttonText: "Ok"
       });
     }
+
+    closeSidebarOnMobile();
   }
 
-  $: profileName = getUserDisplayName($authUser);
-  $: avatarText = getUserAvatarText($authUser);
-  $: profileLabel = $authUser ? `Signed in as ${profileName}. Click to sign out.` : 'Sign in or sign up';
+  $: profileName = username || 'Guest';
+  $: avatarText = getInitials(username);
+  $: profileLabel = username
+    ? `Signed in as ${profileName}. Click to manage.`
+    : 'Set your username';
 
   onMount(() => {
     void syncChats();
@@ -122,11 +123,13 @@
       <button type="button" class="icon-btn" on:click={toggleSidebar} aria-label="Close sidebar">
         <Icon name="toggleSidebar" width="24" height="24" />
       </button>
-      <button type="button" class="new-chat-btn" on:click={() => handleNewChat()}>
+
+      <button type="button" class="new-chat-btn" on:click={handleNewChat}>
         <Icon name="pencil" width="20" height="20" />
         <span class="hide-on-mobile">New chat</span>
       </button>
     </div>
+
     <div class="chats-section">
       <span class="section-title">Your chats</span>
       <ul>
@@ -148,7 +151,7 @@
               aria-label={`Delete chat ${chat.title}`}
               on:click={() => deleteChat(chat.id)}
             >
-              <Icon classes="deleteIcon" name="trashcan" width="24" height="24" />
+              <Icon classes="deleteIcon" name="trashcan" width="20" height="20" />
             </button>
           </li>
         {/each}
@@ -164,7 +167,9 @@
       title={profileLabel}
       on:click={handleProfileAction}
     >
-      <div class="avatar" style={`background-color: ${twoLettersToColor(avatarText)}`}>{avatarText}</div>
+      <div class="avatar">
+        {avatarText}
+      </div>
       <span class="username">{profileName}</span>
     </button>
   </div>

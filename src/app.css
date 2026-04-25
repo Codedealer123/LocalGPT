@@ -163,9 +163,26 @@ body,
 .deleteBtn {
   background: none;
   border: none;
+  display: flex;
   align-items: center;
-  margin-bottom: -5px;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 6px;
+
   visibility: hidden;
+  opacity: 0;
+
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.chat-item:hover .deleteBtn,
+.chat-item:focus-within .deleteBtn {
+  visibility: visible;
+  opacity: 1;
+}
+
+.chat-item:hover {
+  background-color: rgba(48, 48, 48);
 }
 
 .chat-item.selected {
@@ -173,14 +190,6 @@ body,
   transform: scale(0.98);
 }
 
-.chat-item:hover {
-  background-color: rgba(48, 48, 48);
-}
-
-.chat-item:hover .deleteBtn,
-.chat-item:focus-within .deleteBtn {
-  visibility: visible;
-}
 
 .chat-item span {
   overflow: hidden;
@@ -190,7 +199,7 @@ body,
 }
 
 .chat-title {
-  padding: 0px 12px
+  padding: 2px 12px;
 }
 
 .skip-link {
@@ -211,8 +220,8 @@ body,
 }
 
 .deleteIcon {
-    align-self: center;
-    padding: 0 12px 0 0;
+  padding: 0;
+  display: flex;
 }
 
 .section-title {

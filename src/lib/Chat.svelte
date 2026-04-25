@@ -1,68 +1,73 @@
 <script>
-  import { onDestroy, tick } from 'svelte';
-  import { wpm } from './js/store.js'
+  import { onDestroy, onMount, tick } from 'svelte';
   import Input from './Input.svelte';
-  import { currentChatMessages, postMessage, replyToUser } from './js/chats.js';
-  import { currentModel, progress } from './js/store.js';
+  import {
+    currentChatMessages,
+    postMessage,
+    replyToUser,
+    syncChats,
+  } from './js/chats.js';
+
+  import { currentModel, progress, wpm } from './js/store.js';
   import { markdownToHtml } from './js/markdown.js';
+
+  import { settings } from './js/Databases.js';
+  import { changeUsername } from './js/auth.js';
 
   let promptInput = '';
   let isThinking = false;
+
   let streamingReply = '';
   let displayedStreamingReply = '';
+
   let messagesViewport;
   let typewriterTimer = null;
 
-  function getWordTokens(text = '') {
-    return String(text).match(/\S+\s*|\s+/g) ?? [];
-  }
+  let username = '';
 
-  function getNextTypedSlice(source = '', current = '') {
-    if (!source || current.length >= source.length) {
-      return source;
+  onMount(async () => {
+    username = (await settings.getItem("username")) || '';
+    void syncChats();
+  });
+
+  function setUsername(name) {
+    username = name;
+
+    if (username && username.trim()) {
+      changeUsername(username.trim());
+    } else {
+      changeUsername('');
     }
-
-    const tokens = getWordTokens(source);
-    let built = '';
-
-    for (const token of tokens) {
-      const nextBuilt = built + token;
-
-      if (nextBuilt.length > current.length) {
-        return nextBuilt;
-      }
-
-      built = nextBuilt;
-    }
-
-    return source;
   }
 
   function syncTypewriter() {
-    if (typewriterTimer) {
-      return;
-    }
-
-    const intervalMs = Math.max(40, Math.round(60000 / Math.max(wpm, 1)));
-
+    if (typewriterTimer) return;
+  
+    const charsPerTick = 2;
+    const intervalMs = 16; // ~60fps smooth
+  
     typewriterTimer = window.setInterval(() => {
-      if (!streamingReply) {
+      if (!streamingReply && displayedStreamingReply.length === 0) {
         clearTypewriter();
         return;
       }
-
-      const nextDisplayedReply = getNextTypedSlice(streamingReply, displayedStreamingReply);
-
-      if (nextDisplayedReply !== displayedStreamingReply) {
-        displayedStreamingReply = nextDisplayedReply;
+  
+      if (displayedStreamingReply.length < streamingReply.length) {
+        displayedStreamingReply = streamingReply.slice(
+          0,
+          displayedStreamingReply.length + charsPerTick
+        );
       }
-
-      if (displayedStreamingReply.length >= streamingReply.length) {
+  
+      if (
+        displayedStreamingReply.length >= streamingReply.length &&
+        !isThinking
+      ) {
         clearTypewriter();
       }
     }, intervalMs);
   }
-
+  
   function clearTypewriter() {
     if (typewriterTimer) {
       window.clearInterval(typewriterTimer);
@@ -79,15 +84,13 @@
   async function sendPrompt() {
     const trimmed = promptInput.trim();
 
-    if (!trimmed || isThinking || !$currentModel) {
-      return;
-    }
+    if (!trimmed || isThinking || !$currentModel) return;
 
     promptInput = '';
-    clearTypewriter();
+    isThinking = true;
+
     streamingReply = '';
     displayedStreamingReply = '';
-    isThinking = true;
 
     try {
       await postMessage(trimmed, 'user');
@@ -100,15 +103,14 @@
           void scrollToBottom();
         }
       });
-
-      displayedStreamingReply = streamingReply;
       clearTypewriter();
       streamingReply = '';
-    } catch (error) {
+    } catch (err) {
       clearTypewriter();
       streamingReply = '';
       displayedStreamingReply = '';
-      await postMessage(`Error: ${error?.message ?? error}`, 'assistant');
+
+      await postMessage(`Error: ${err?.message ?? err}`, 'assistant');
     } finally {
       isThinking = false;
       await scrollToBottom();
@@ -119,9 +121,11 @@
   $: messages = $currentChatMessages ?? [];
   $: hasMessages = messages.length > 0;
   $: progressText = $progress?.text ?? $progress?.status ?? '';
+
   $: if (hasMessages || streamingReply || isThinking) {
     scrollToBottom();
   }
+
   $: if (streamingReply.length < displayedStreamingReply.length) {
     displayedStreamingReply = streamingReply;
   }
@@ -131,15 +135,17 @@
   });
 </script>
 
-<section class="chat-area" aria-label="Chat conversation">
+<section class="chat-area">
   {#if hasMessages || streamingReply || isThinking}
-    <div class="chat-messages" bind:this={messagesViewport} aria-live="polite" aria-busy={isThinking}>
+    <div class="chat-messages" bind:this={messagesViewport}>
       {#each messages as message (message.id)}
         <div class={message.role === 'user' ? 'user-message' : 'assistant-message'}>
           {#if message.role === 'user'}
             <div class="user-bubble">{message.content}</div>
           {:else}
-            <div class="assistant-copy markdown-body">{@html markdownToHtml(message.content)}</div>
+            <div class="assistant-copy markdown-body">
+              {@html markdownToHtml(message.content)}
+            </div>
           {/if}
         </div>
       {/each}
@@ -147,16 +153,15 @@
       {#if streamingReply || isThinking}
         <div class="assistant-message">
           {#if streamingReply}
-            <div class="assistant-copy typing-preview is-typing">
-              <span>{displayedStreamingReply}</span><span class="typing-caret" aria-hidden="true"></span>
+            <div class="assistant-copy typing-preview markdown-body is-typing">
+              {@html markdownToHtml(displayedStreamingReply, '<span class="typing-caret"></span>')}
             </div>
           {:else}
-            <div class="assistant-loading" role="status" aria-live="polite">
-              <div class="thinking-dots" aria-label="AI is responding">
-                <span></span>
-                <span></span>
-                <span></span>
+            <div class="assistant-loading">
+              <div class="thinking-dots">
+                <span></span><span></span><span></span>
               </div>
+
               {#if progressText}
                 <span class="progress-text">{progressText}</span>
               {/if}
@@ -187,7 +192,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     padding:
       0
       max(var(--page-padding, 20px), env(safe-area-inset-right))
@@ -206,6 +211,7 @@
     text-align: center;
     margin-bottom: 64px;
     font-synthesis: none;
+    margin-top: 10vw;
   }
 
   .chat-messages {
@@ -267,10 +273,10 @@
 
   .typing-caret {
     display: inline-block;
-    width: 0.6ch;
-    height: 1.1em;
+    width: 0.55ch;
+    height: 1em;
     margin-left: 2px;
-    vertical-align: text-bottom;
+    vertical-align: middle;
     background-color: currentColor;
     opacity: 0.85;
     animation: blink 0.9s step-end infinite;
@@ -356,6 +362,18 @@
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
+  
+  .markdown-body :global(.typing-caret) {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background-color: #ffffff;
+    opacity: 0.85;
+    animation: blink 0.9s step-end infinite;
+  }
+  
 
   .markdown-body :global(pre::-webkit-scrollbar) {
     width: 0;
