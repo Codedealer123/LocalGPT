@@ -1,3 +1,6 @@
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+
 function escapeHtml(value = "") {
   return value
     .replace(/&/g, "&amp;")
@@ -12,9 +15,47 @@ function sanitizeUrl(url = "") {
   return /^(https?:|mailto:|#|\/)/i.test(value) ? value : '#';
 }
 
-function parseInline(text = "") {
+function extractMathTokens(text) {
+  const tokens = [];
+
+  // Block math: \[...\] and $$...$$
+  text = text.replace(/\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$/g, (_, a, b) => {
+    const token = `__MATH_BLOCK_${tokens.length}__`;
+    tokens.push({ type: 'block', content: (a ?? b).trim() });
+    return token;
+  });
+
+  // Inline math: \(...\) and $...$
+  text = text.replace(/\\\(([\s\S]*?)\\\)|\$([^\$\n]+?)\$/g, (_, a, b) => {
+    const token = `__MATH_INLINE_${tokens.length}__`;
+    tokens.push({ type: 'inline', content: (a ?? b).trim() });
+    return token;
+  });
+
+  return { text, tokens };
+}
+
+function renderMathTokens(html, tokens) {
+  return html.replace(/__MATH_(BLOCK|INLINE)_(\d+)__/g, (_, type, i) => {
+    const { content, type: kind } = tokens[Number(i)];
+    try {
+      return katex.renderToString(content, {
+        displayMode: kind === 'block',
+        throwOnError: false,
+        output: 'html',
+      });
+    } catch {
+      return escapeHtml(content);
+    }
+  });
+}
+
+function parseInline(text = "", tokens = []) {
   const codeTokens = [];
   let html = escapeHtml(text);
+
+  // Restore math tokens before escaping inline content
+  html = html.replace(/__MATH_(BLOCK|INLINE)_(\d+)__/g, (m) => m);
 
   html = html.replace(/`([^`]+)`/g, (_, code) => {
     const token = `__CODE_${codeTokens.length}__`;
@@ -40,10 +81,12 @@ function parseInline(text = "") {
   html = html.replace(/ {2}\n/g, '<br />');
   html = html.replace(/\n/g, '<br />');
 
-  return codeTokens.reduce(
+  html = codeTokens.reduce(
     (result, token, index) => result.replace(`__CODE_${index}__`, token),
     html
   );
+
+  return html;
 }
 
 function getListItemMeta(line = "") {
@@ -64,7 +107,7 @@ function getListItemMeta(line = "") {
   };
 }
 
-function parseList(lines, startIndex) {
+function parseList(lines, startIndex, tokens) {
   const firstItem = getListItemMeta(lines[startIndex]);
   if (!firstItem) return null;
 
@@ -80,10 +123,10 @@ function parseList(lines, startIndex) {
 
     if (item.kind === 'task') {
       items.push(
-        `<li class="task-list-item"><input type="checkbox" disabled ${/x/i.test(item.checkbox) ? 'checked' : ''} /> <span>${parseInline(item.content)}</span></li>`
+        `<li class="task-list-item"><input type="checkbox" disabled ${/x/i.test(item.checkbox) ? 'checked' : ''} /> <span>${parseInline(item.content, tokens)}</span></li>`
       );
     } else {
-      items.push(`<li>${parseInline(item.content)}</li>`);
+      items.push(`<li>${parseInline(item.content, tokens)}</li>`);
     }
 
     index += 1;
@@ -98,7 +141,7 @@ function parseList(lines, startIndex) {
       if (continuationItem || continuationIndent <= baseIndent) break;
 
       const previous = items.pop() ?? '';
-      items.push(previous.replace('</li>', `<br />${parseInline(continuation.trim())}</li>`));
+      items.push(previous.replace('</li>', `<br />${parseInline(continuation.trim(), tokens)}</li>`));
       index += 1;
     }
   }
@@ -113,7 +156,7 @@ function parseList(lines, startIndex) {
   };
 }
 
-function parseTable(lines, startIndex) {
+function parseTable(lines, startIndex, tokens) {
   if (startIndex + 1 >= lines.length) return null;
   if (!/\|/.test(lines[startIndex]) || !/^\s*\|?[\s:-|]+\|?\s*$/.test(lines[startIndex + 1])) {
     return null;
@@ -128,12 +171,7 @@ function parseTable(lines, startIndex) {
   }
 
   const splitRow = (line) =>
-    line
-      .trim()
-      .replace(/^\|/, '')
-      .replace(/\|$/, '')
-      .split('|')
-      .map((cell) => cell.trim());
+    line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
 
   const header = splitRow(rows[0]);
   const body = rows.slice(2).map(splitRow);
@@ -141,15 +179,33 @@ function parseTable(lines, startIndex) {
   return {
     nextIndex: index,
     html:
-      `<table><thead><tr>${header.map((cell) => `<th>${parseInline(cell)}</th>`).join('')}</tr></thead>` +
-      `<tbody>${body
-        .map((row) => `<tr>${row.map((cell) => `<td>${parseInline(cell)}</td>`).join('')}</tr>`)
-        .join('')}</tbody></table>`
+      `<table><thead><tr>${header.map((cell) => `<th>${parseInline(cell, tokens)}</th>`).join('')}</tr></thead>` +
+      `<tbody>${body.map((row) => `<tr>${row.map((cell) => `<td>${parseInline(cell, tokens)}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+  };
+}
+
+function extractThinkBlock(markdown) {
+  const match = markdown.match(/^<think>([\s\S]*?)<\/think>\n*/);
+  if (!match) return { think: null, rest: markdown };
+  return {
+    think: match[1].trim(),
+    rest: markdown.slice(match[0].length),
   };
 }
 
 export function markdownToHtml(markdown = "", appendHtml = "") {
-  const lines = String(markdown).replace(/\r\n/g, '\n').split('\n');
+  const hasKatex = true;
+
+  const { think, rest } = extractThinkBlock(String(markdown).replace(/\r\n/g, '\n'));
+  let source = rest;
+  let mathTokens = [];
+  if (hasKatex) {
+    const extracted = extractMathTokens(source);
+    source = extracted.text;
+    mathTokens = extracted.tokens;
+  }
+
+  const lines = source.split('\n');
   const blocks = [];
 
   for (let index = 0; index < lines.length;) {
@@ -157,6 +213,13 @@ export function markdownToHtml(markdown = "", appendHtml = "") {
     const trimmed = line.trim();
 
     if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    // Block math token on its own line — render as block
+    if (hasKatex && /^__MATH_BLOCK_\d+__$/.test(trimmed)) {
+      blocks.push(`<div class="math-block">${renderMathTokens(trimmed, mathTokens)}</div>`);
       index += 1;
       continue;
     }
@@ -176,7 +239,7 @@ export function markdownToHtml(markdown = "", appendHtml = "") {
       continue;
     }
 
-    const table = parseTable(lines, index);
+    const table = parseTable(lines, index, mathTokens);
     if (table) {
       blocks.push(table.html);
       index = table.nextIndex;
@@ -184,11 +247,8 @@ export function markdownToHtml(markdown = "", appendHtml = "") {
     }
 
     if (/^\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+\.\s+)/.test(line)) {
-      const list = parseList(lines, index);
-      if (!list) {
-        index += 1;
-        continue;
-      }
+      const list = parseList(lines, index, mathTokens);
+      if (!list) { index += 1; continue; }
       blocks.push(list.html);
       index = list.nextIndex;
       continue;
@@ -200,14 +260,14 @@ export function markdownToHtml(markdown = "", appendHtml = "") {
         quoteLines.push(lines[index].trim().replace(/^>\s?/, ''));
         index += 1;
       }
-      blocks.push(`<blockquote>${quoteLines.map((quote) => `<p>${parseInline(quote)}</p>`).join('')}</blockquote>`);
+      blocks.push(`<blockquote>${quoteLines.map((q) => `<p>${parseInline(q, mathTokens)}</p>`).join('')}</blockquote>`);
       continue;
     }
 
     if (/^#{1,6}\s+/.test(trimmed)) {
       const [, hashes, content] = trimmed.match(/^(#{1,6})\s+(.*)$/);
       const level = hashes.length;
-      blocks.push(`<h${level}>${parseInline(content)}</h${level}>`);
+      blocks.push(`<h${level}>${parseInline(content, mathTokens)}</h${level}>`);
       index += 1;
       continue;
     }
@@ -232,20 +292,30 @@ export function markdownToHtml(markdown = "", appendHtml = "") {
       index += 1;
     }
 
-    blocks.push(`<p>${parseInline(paragraph.join('\n'))}</p>`);
+    const paraHtml = parseInline(paragraph.join('\n'), mathTokens);
+    blocks.push(`<p>${hasKatex ? renderMathTokens(paraHtml, mathTokens) : paraHtml}</p>`);
   }
 
-  if (!appendHtml) return blocks.join('');
+  // Render any remaining math tokens in all blocks
+  const rendered = hasKatex
+    ? blocks.map((b) => renderMathTokens(b, mathTokens))
+    : blocks;
 
-  if (blocks.length === 0) return `<p>${appendHtml}</p>`;
+  if (!appendHtml) return rendered.join('');
 
-  const last = blocks[blocks.length - 1];
+  if (rendered.length === 0) return `<p>${appendHtml}</p>`;
+
+  const last = rendered[rendered.length - 1];
   const closing = last.match(/<\/([a-z][a-z0-9]*)>$/i);
   if (closing) {
-    blocks[blocks.length - 1] = last.slice(0, -closing[0].length) + appendHtml + closing[0];
+    rendered[rendered.length - 1] = last.slice(0, -closing[0].length) + appendHtml + closing[0];
   } else {
-    blocks[blocks.length - 1] = last + appendHtml;
+    rendered[rendered.length - 1] = last + appendHtml;
   }
 
-  return blocks.join('');
+  const thinkHtml = think
+    ? `<details class="think-block"><summary>Thinking</summary><div class="think-body">${markdownToHtml(think)}</div></details>`
+    : '';
+  
+  return thinkHtml + rendered.join('');
 }

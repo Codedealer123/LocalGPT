@@ -374,6 +374,15 @@
     animation: blink 0.9s step-end infinite;
   }
   
+  .markdown-body :global(.math-block) {
+    text-align: center;
+    margin: 1em 0;
+    overflow-x: auto;
+  }
+  
+  .markdown-body :global(.katex-display) {
+    margin: 0;
+  }
 
   .markdown-body :global(pre::-webkit-scrollbar) {
     width: 0;
