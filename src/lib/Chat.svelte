@@ -1,5 +1,5 @@
 <script>
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onDestroy, onMount, afterUpdate, tick } from 'svelte';
   import Input from './Input.svelte';
   import {
     currentChatMessages,
@@ -10,6 +10,7 @@
 
   import { currentModel, progress, wpm } from './js/store.js';
   import { markdownToHtml } from './js/markdown.js';
+  import { typeset, mathjaxToHtml } from './js/mathjax';
 
   import { settings } from './js/Databases.js';
   import { changeUsername } from './js/auth.js';
@@ -28,6 +29,10 @@
   onMount(async () => {
     username = (await settings.getItem("username")) || '';
     void syncChats();
+  });
+  
+  afterUpdate(() => {
+    typeset(messagesViewport);
   });
 
   function setUsername(name) {
@@ -144,7 +149,7 @@
             <div class="user-bubble">{message.content}</div>
           {:else}
             <div class="assistant-copy markdown-body">
-              {@html markdownToHtml(message.content)}
+              {@html mathjaxToHtml(message.content)}
             </div>
           {/if}
         </div>
