@@ -15,8 +15,43 @@ function sanitizeUrl(url = "") {
   return /^(https?:|mailto:|#|\/)/i.test(value) ? value : '#';
 }
 
+// Block LaTeX environments - rendered as display math.
+const BLOCK_ENVS = new Set([
+  'equation', 'equation*',
+  'align', 'align*',
+  'alignat', 'alignat*',
+  'gather', 'gather*',
+  'multline', 'multline*',
+  'flalign', 'flalign*',
+  'split', 'array',
+  'matrix', 'pmatrix', 'bmatrix', 'Bmatrix', 'vmatrix', 'Vmatrix',
+  'cases', 'eqnarray', 'eqnarray*',
+]);
+
+// Map numbered environments to their starred (unnumbered) equivalents so
+// KaTeX does not render "(1)", "(2)" tags in the output.
+const NUMBERED_ENVS = {
+  'equation': 'equation*',
+  'align':    'align*',
+  'alignat':  'alignat*',
+  'gather':   'gather*',
+  'multline': 'multline*',
+  'flalign':  'flalign*',
+  'eqnarray': 'eqnarray*',
+};
+
 function extractMathTokens(text) {
   const tokens = [];
+
+  // \begin{env}...\end{env} environments
+  text = text.replace(/\\begin\{([^}]+)\}([\s\S]*?)\\end\{\1\}/g, (_, env, body) => {
+    const envName = env.trim();
+    const isBlock = BLOCK_ENVS.has(envName);
+    const renderEnv = NUMBERED_ENVS[envName] ?? envName;
+    const token = `__MATH_${isBlock ? 'BLOCK' : 'INLINE'}_${tokens.length}__`;
+    tokens.push({ type: isBlock ? 'block' : 'inline', content: `\\begin{${renderEnv}}${body}\\end{${renderEnv}}` });
+    return token;
+  });
 
   // Block math: \[...\] and $$...$$
   text = text.replace(/\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$/g, (_, a, b) => {
@@ -52,9 +87,18 @@ function renderMathTokens(html, tokens) {
 
 function parseInline(text = "", tokens = []) {
   const codeTokens = [];
-  let html = escapeHtml(text);
 
-  html = html.replace(/__MATH_(BLOCK|INLINE)_(\d+)__/g, (m) => m);
+  // Protect math placeholders FIRST. The bold regex /(\*\*|__)(.*?)\1/ would
+  // treat the leading/trailing __ of __MATH_BLOCK_0__ as bold delimiters and
+  // destroy the placeholder. Swap to a sentinel with no underscores or asterisks.
+  const mathPlaceholders = [];
+  text = text.replace(/__MATH_(BLOCK|INLINE)_(\d+)__/g, (m) => {
+    const id = `XMATHX${mathPlaceholders.length}XMATHX`;
+    mathPlaceholders.push(m);
+    return id;
+  });
+
+  let html = escapeHtml(text);
 
   html = html.replace(/`([^`]+)`/g, (_, code) => {
     const token = `__CODE_${codeTokens.length}__`;
@@ -85,10 +129,11 @@ function parseInline(text = "", tokens = []) {
     html
   );
 
-  // Render math tokens at the end after all other inline processing
-  if (tokens.length > 0) {
-    html = renderMathTokens(html, tokens);
-  }
+  // Restore math placeholders so the caller's renderMathTokens pass can find them.
+  html = mathPlaceholders.reduce(
+    (result, original, i) => result.replace(`XMATHX${i}XMATHX`, original),
+    html
+  );
 
   return html;
 }
@@ -197,17 +242,34 @@ function extractThinkBlock(markdown) {
   };
 }
 
-export function markdownToHtml(markdown = "", appendHtml = "") {
-  const hasKatex = true;
+// Lightweight inline-only renderer for user messages.
+// No block elements (no <p>, <div>, <ul> etc.) so the bubble never grows.
+// Uses only * for italic (not _) to avoid breaking snake_case identifiers.
+export function userMarkdownToHtml(text = "") {
+  let html = escapeHtml(String(text));
+  // inline code — protect first so inner content isn't touched by other regexes
+  const codeTokens = [];
+  html = html.replace(/`([^`]+)`/g, (_, code) => {
+    const token = `__UCODE_${codeTokens.length}__`;
+    codeTokens.push(`<code>${escapeHtml(code)}</code>`);
+    return token;
+  });
+  html = html.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+  html = html.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  html = html.replace(/\n/g, '<br />');
+  html = codeTokens.reduce((r, tok, i) => r.replace(`__UCODE_${i}__`, tok), html);
+  return html;
+}
 
+export function markdownToHtml(markdown = "", appendHtml = "") {
   const { think, rest } = extractThinkBlock(String(markdown).replace(/\r\n/g, '\n'));
   let source = rest;
-  let mathTokens = [];
-  if (hasKatex) {
-    const extracted = extractMathTokens(source);
-    source = extracted.text;
-    mathTokens = extracted.tokens;
-  }
+
+  const extracted = extractMathTokens(source);
+  source = extracted.text;
+  const mathTokens = extracted.tokens;
 
   const lines = source.split('\n');
   const blocks = [];
@@ -221,8 +283,7 @@ export function markdownToHtml(markdown = "", appendHtml = "") {
       continue;
     }
 
-    // Block math token on its own line — render as block
-    if (hasKatex && /^__MATH_BLOCK_\d+__$/.test(trimmed)) {
+    if (/^__MATH_BLOCK_\d+__$/.test(trimmed)) {
       blocks.push(`<div class="math-block">${renderMathTokens(trimmed, mathTokens)}</div>`);
       index += 1;
       continue;
@@ -296,16 +357,18 @@ export function markdownToHtml(markdown = "", appendHtml = "") {
       index += 1;
     }
 
-    const paraHtml = parseInline(paragraph.join('\n'), mathTokens);
-    blocks.push(`<p>${hasKatex ? renderMathTokens(paraHtml, mathTokens) : paraHtml}</p>`);
+    blocks.push(`<p>${parseInline(paragraph.join('\n'), mathTokens)}</p>`);
   }
 
-  // Render any remaining math tokens in all blocks
-  const rendered = hasKatex
-    ? blocks.map((b) => renderMathTokens(b, mathTokens))
-    : blocks;
+  // Single final pass renders all math tokens across every block type.
+  const rendered = blocks.map((b) => renderMathTokens(b, mathTokens));
 
-  if (!appendHtml) return rendered.join('');
+  if (!appendHtml) {
+    const thinkHtml = think
+      ? `<details class="think-block"><summary>Thinking</summary><div class="think-body">${markdownToHtml(think)}</div></details>`
+      : '';
+    return thinkHtml + rendered.join('');
+  }
 
   if (rendered.length === 0) return `<p>${appendHtml}</p>`;
 
@@ -320,6 +383,6 @@ export function markdownToHtml(markdown = "", appendHtml = "") {
   const thinkHtml = think
     ? `<details class="think-block"><summary>Thinking</summary><div class="think-body">${markdownToHtml(think)}</div></details>`
     : '';
-  
+
   return thinkHtml + rendered.join('');
 }

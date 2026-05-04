@@ -1,4 +1,37 @@
-import "mathjax/es5/tex-chtml.js";
+// MathJax config MUST be set before MathJax loads.
+// Static `import` is hoisted above all module code, so we use a dynamic
+// import() instead — this runs synchronously here first, then MathJax loads.
+if (typeof window !== "undefined") {
+  window.MathJax = {
+    tex: {
+      inlineMath:  [["\\(", "\\)"]],
+      displayMath: [["\\[", "\\]"]],
+      tags: "none",
+    },
+    startup: {
+      ready() {
+        window.MathJax.startup.defaultReady();
+        mathjaxReady = true;
+        mathjaxQueue.forEach((fn) => fn());
+        mathjaxQueue = [];
+      },
+    },
+  };
+}
+
+// Dynamic import so MathJax loads AFTER the config above is set.
+// With a static `import "mathjax/..."` at the top of the file, the import
+// is hoisted and MathJax would load before window.MathJax is assigned.
+let mathjaxReady = false;
+let mathjaxQueue = [];
+
+if (typeof window !== "undefined") {
+  import("mathjax/es5/tex-chtml.js").catch((e) =>
+    console.warn("MathJax failed to load:", e)
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 function escapeHtml(value = "") {
   return value
@@ -14,37 +47,50 @@ function sanitizeUrl(url = "") {
   return /^(https?:|mailto:|#|\/)/i.test(value) ? value : "#";
 }
 
-function extractMathTokens(text) {
-  const tokens = [];
+const NUMBERED_ENVS = {
+  'equation': 'equation*',
+  'align':    'align*',
+  'alignat':  'alignat*',
+  'gather':   'gather*',
+  'multline': 'multline*',
+  'flalign':  'flalign*',
+  'eqnarray': 'eqnarray*',
+};
 
-  text = text.replace(/\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$/g, (_, a, b) => {
-    const token = `__MATH_BLOCK_${tokens.length}__`;
-    tokens.push({ type: "block", content: (a ?? b).trim() });
-    return token;
+function normalizeMath(text) {
+  // \begin{env}...\end{env} -> \[...\]
+  text = text.replace(/\\begin\{([^}]+)\}([\s\S]*?)\\end\{\1\}/g, (_, env, body) => {
+    const envName = env.trim();
+    const renderEnv = NUMBERED_ENVS[envName] ?? envName;
+    return `\\[\\begin{${renderEnv}}${body}\\end{${renderEnv}}\\]`;
   });
 
-  text = text.replace(/\\\(([\s\S]*?)\\\)|\$([^\$\n]+?)\$/g, (_, a, b) => {
-    const token = `__MATH_INLINE_${tokens.length}__`;
-    tokens.push({ type: "inline", content: (a ?? b).trim() });
-    return token;
-  });
+  // $$...$$ -> \[...\]
+  text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, body) => `\\[${body}\\]`);
 
-  return { text, tokens };
+  // $...$ -> \(...\)
+  text = text.replace(/\$([^\$\n]+?)\$/g, (_, body) => `\\(${body}\\)`);
+
+  // Collapse multi-line \[...\] and \(...\) onto a single line so the
+  // line-by-line markdown parser sees them as one unit.
+  text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, body) => `\\[${body.replace(/\n/g, ' ')}\\]`);
+  text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_, body) => `\\(${body.replace(/\n/g, ' ')}\\)`);
+
+  return text;
 }
 
-function renderMathTokens(html, tokens) {
-  return html.replace(/__MATH_(BLOCK|INLINE)_(\d+)__/g, (_, type, i) => {
-    const { content, type: kind } = tokens[Number(i)];
-    const delimiter = kind === "block" ? ["\\[", "\\]"] : ["\\(", "\\)"];
-    return `${delimiter[0]}${content}${delimiter[1]}`;
-  });
-}
-
-function parseInline(text = "", tokens = []) {
+function parseInline(text = "") {
   const codeTokens = [];
-  let html = escapeHtml(text);
 
-  html = html.replace(/__MATH_(BLOCK|INLINE)_(\d+)__/g, (m) => m);
+  // Protect math from bold/italic regexes using a sentinel without _ or *.
+  const mathPlaceholders = [];
+  text = text.replace(/\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)/g, (m) => {
+    const id = `XMATHX${mathPlaceholders.length}XMATHX`;
+    mathPlaceholders.push(m);
+    return id;
+  });
+
+  let html = escapeHtml(text);
 
   html = html.replace(/`([^`]+)`/g, (_, code) => {
     const token = `__CODE_${codeTokens.length}__`;
@@ -72,7 +118,12 @@ function parseInline(text = "", tokens = []) {
 
   html = codeTokens.reduce(
     (result, token, index) => result.replace(`__CODE_${index}__`, token),
-    html,
+    html
+  );
+
+  html = mathPlaceholders.reduce(
+    (result, original, i) => result.replace(`XMATHX${i}XMATHX`, original),
+    html
   );
 
   return html;
@@ -94,12 +145,11 @@ function getListItemMeta(line = "") {
     checkbox,
     orderedStart,
     content,
-    kind:
-      checkbox !== undefined ? "task" : orderedStart ? "ordered" : "unordered",
+    kind: checkbox !== undefined ? "task" : orderedStart ? "ordered" : "unordered",
   };
 }
 
-function parseList(lines, startIndex, tokens) {
+function parseList(lines, startIndex) {
   const firstItem = getListItemMeta(lines[startIndex]);
   if (!firstItem) return null;
 
@@ -115,10 +165,10 @@ function parseList(lines, startIndex, tokens) {
 
     if (item.kind === "task") {
       items.push(
-        `<li class="task-list-item"><input type="checkbox" disabled ${/x/i.test(item.checkbox) ? "checked" : ""} /> <span>${parseInline(item.content, tokens)}</span></li>`,
+        `<li class="task-list-item"><input type="checkbox" disabled ${/x/i.test(item.checkbox) ? "checked" : ""} /> <span>${parseInline(item.content)}</span></li>`,
       );
     } else {
-      items.push(`<li>${parseInline(item.content, tokens)}</li>`);
+      items.push(`<li>${parseInline(item.content)}</li>`);
     }
 
     index += 1;
@@ -134,10 +184,7 @@ function parseList(lines, startIndex, tokens) {
 
       const previous = items.pop() ?? "";
       items.push(
-        previous.replace(
-          "</li>",
-          `<br />${parseInline(continuation.trim(), tokens)}</li>`,
-        ),
+        previous.replace("</li>", `<br />${parseInline(continuation.trim())}</li>`),
       );
       index += 1;
     }
@@ -153,7 +200,7 @@ function parseList(lines, startIndex, tokens) {
   };
 }
 
-function parseTable(lines, startIndex, tokens) {
+function parseTable(lines, startIndex) {
   if (startIndex + 1 >= lines.length) return null;
   if (
     !/\|/.test(lines[startIndex]) ||
@@ -175,12 +222,7 @@ function parseTable(lines, startIndex, tokens) {
   }
 
   const splitRow = (line) =>
-    line
-      .trim()
-      .replace(/^\|/, "")
-      .replace(/\|$/, "")
-      .split("|")
-      .map((cell) => cell.trim());
+    line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 
   const header = splitRow(rows[0]);
   const body = rows.slice(2).map(splitRow);
@@ -188,58 +230,30 @@ function parseTable(lines, startIndex, tokens) {
   return {
     nextIndex: index,
     html:
-      `<table><thead><tr>${header.map((cell) => `<th>${parseInline(cell, tokens)}</th>`).join("")}</tr></thead>` +
-      `<tbody>${body.map((row) => `<tr>${row.map((cell) => `<td>${parseInline(cell, tokens)}</td>`).join("")}</tr>`).join("")}</tbody></table>`,
+      `<table><thead><tr>${header.map((c) => `<th>${parseInline(c)}</th>`).join("")}</tr></thead>` +
+      `<tbody>${body.map((row) => `<tr>${row.map((c) => `<td>${parseInline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`,
   };
 }
 
 function extractThinkBlock(markdown) {
   const closed = markdown.match(/^<think>([\s\S]*?)<\/think>\n*/);
   if (closed) {
-    return {
-      think: closed[1].trim(),
-      rest: markdown.slice(closed[0].length),
-      open: false,
-    };
+    return { think: closed[1].trim(), rest: markdown.slice(closed[0].length), open: false };
   }
-
   const open = markdown.match(/^<think>([\s\S]*)/);
   if (open) {
     return { think: open[1].trim(), rest: "", open: true };
   }
-
   return { think: null, rest: markdown, open: false };
-}
-
-let mathjaxReady = false;
-let mathjaxQueue = [];
-
-if (typeof window !== "undefined") {
-  window.MathJax = {
-    tex: {
-      inlineMath: [
-        ["\\(", "\\)"],
-        ["$", "$"],
-      ],
-      displayMath: [
-        ["\\[", "\\]"],
-        ["$$", "$$"],
-      ],
-    },
-    startup: {
-      ready() {
-        window.MathJax.startup.defaultReady();
-        mathjaxReady = true;
-        mathjaxQueue.forEach((fn) => fn());
-        mathjaxQueue = [];
-      },
-    },
-  };
 }
 
 export function typeset(element) {
   if (!element) return;
-  const run = () => window.MathJax?.typesetPromise?.([element]);
+  const run = async () => {
+    if (!window.MathJax?.typesetPromise) return;
+    await window.MathJax.typesetClear([element]);
+    await window.MathJax.typesetPromise([element]);
+  };
   if (mathjaxReady) run();
   else mathjaxQueue.push(run);
 }
@@ -248,13 +262,8 @@ export function mathjaxToHtml(markdown = "", appendHtml = "") {
   const { think, rest, open } = extractThinkBlock(
     String(markdown).replace(/\r\n/g, "\n"),
   );
-  let source = rest;
-  let mathTokens = [];
 
-  const extracted = extractMathTokens(source);
-  source = extracted.text;
-  mathTokens = extracted.tokens;
-
+  const source = normalizeMath(rest);
   const lines = source.split("\n");
   const blocks = [];
 
@@ -267,10 +276,9 @@ export function mathjaxToHtml(markdown = "", appendHtml = "") {
       continue;
     }
 
-    if (/^__MATH_BLOCK_\d+__$/.test(trimmed)) {
-      blocks.push(
-        `<div class="math-block">${renderMathTokens(trimmed, mathTokens)}</div>`,
-      );
+    // Standalone display math line
+    if (/^\\\[[\s\S]*?\\\]$/.test(trimmed)) {
+      blocks.push(`<div class="math-block">${trimmed}</div>`);
       index += 1;
       continue;
     }
@@ -279,12 +287,10 @@ export function mathjaxToHtml(markdown = "", appendHtml = "") {
       const language = trimmed.slice(3).trim();
       const codeLines = [];
       index += 1;
-
       while (index < lines.length && !/^```/.test(lines[index].trim())) {
         codeLines.push(lines[index]);
         index += 1;
       }
-
       if (index < lines.length) index += 1;
       blocks.push(
         `<pre><code${language ? ` class="language-${escapeHtml(language)}"` : ""}>${escapeHtml(codeLines.join("\n"))}</code></pre>`,
@@ -292,7 +298,7 @@ export function mathjaxToHtml(markdown = "", appendHtml = "") {
       continue;
     }
 
-    const table = parseTable(lines, index, mathTokens);
+    const table = parseTable(lines, index);
     if (table) {
       blocks.push(table.html);
       index = table.nextIndex;
@@ -300,11 +306,8 @@ export function mathjaxToHtml(markdown = "", appendHtml = "") {
     }
 
     if (/^\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+\.\s+)/.test(line)) {
-      const list = parseList(lines, index, mathTokens);
-      if (!list) {
-        index += 1;
-        continue;
-      }
+      const list = parseList(lines, index);
+      if (!list) { index += 1; continue; }
       blocks.push(list.html);
       index = list.nextIndex;
       continue;
@@ -317,7 +320,7 @@ export function mathjaxToHtml(markdown = "", appendHtml = "") {
         index += 1;
       }
       blocks.push(
-        `<blockquote>${quoteLines.map((q) => `<p>${parseInline(q, mathTokens)}</p>`).join("")}</blockquote>`,
+        `<blockquote>${quoteLines.map((q) => `<p>${parseInline(q)}</p>`).join("")}</blockquote>`,
       );
       continue;
     }
@@ -325,7 +328,7 @@ export function mathjaxToHtml(markdown = "", appendHtml = "") {
     if (/^#{1,6}\s+/.test(trimmed)) {
       const [, hashes, content] = trimmed.match(/^(#{1,6})\s+(.*)$/);
       const level = hashes.length;
-      blocks.push(`<h${level}>${parseInline(content, mathTokens)}</h${level}>`);
+      blocks.push(`<h${level}>${parseInline(content)}</h${level}>`);
       index += 1;
       continue;
     }
@@ -354,33 +357,51 @@ export function mathjaxToHtml(markdown = "", appendHtml = "") {
       index += 1;
     }
 
-    const paraHtml = parseInline(paragraph.join("\n"), mathTokens);
-    blocks.push(`<p>${renderMathTokens(paraHtml, mathTokens)}</p>`);
+    blocks.push(`<p>${parseInline(paragraph.join("\n"))}</p>`);
   }
 
-  const rendered = blocks.map((b) => renderMathTokens(b, mathTokens));
+  const body = blocks.join("");
 
   if (!appendHtml) {
     const thinkHtml = think
-      ? `<details class="think-block" ${open ? "open" : ""}><summary>${open ? "Thinking…" : "Thinking"}</summary><div class="think-body">${mathjaxToHtml(think)}</div></details>`
+      ? `<details class="think-block" ${open ? "open" : ""}><summary>${open ? "Thinking\u2026" : "Thinking"}</summary><div class="think-body">${mathjaxToHtml(think)}</div></details>`
       : "";
-    return thinkHtml + rendered.join("");
+    return thinkHtml + body;
   }
 
-  if (rendered.length === 0) return `<p>${appendHtml}</p>`;
+  if (blocks.length === 0) return `<p>${appendHtml}</p>`;
 
-  const last = rendered[rendered.length - 1];
+  const last = blocks[blocks.length - 1];
   const closing = last.match(/<\/([a-z][a-z0-9]*)>$/i);
+  let result;
   if (closing) {
-    rendered[rendered.length - 1] =
-      last.slice(0, -closing[0].length) + appendHtml + closing[0];
+    blocks[blocks.length - 1] = last.slice(0, -closing[0].length) + appendHtml + closing[0];
+    result = blocks.join("");
   } else {
-    rendered[rendered.length - 1] = last + appendHtml;
+    result = body + appendHtml;
   }
 
   const thinkHtml = think
-    ? `<details class="think-block" ${open ? "open" : ""}><summary>${open ? "Thinking…" : "Thinking"}</summary><div class="think-body">${mathjaxToHtml(think)}</div></details>`
+    ? `<details class="think-block" ${open ? "open" : ""}><summary>${open ? "Thinking\u2026" : "Thinking"}</summary><div class="think-body">${mathjaxToHtml(think)}</div></details>`
     : "";
 
-  return thinkHtml + rendered.join("");
+  return thinkHtml + result;
+}
+
+export function userMarkdownToHtml(text = "") {
+  let html = escapeHtml(String(text));
+  // inline code — protect first so inner content isn't touched by other regexes
+  const codeTokens = [];
+  html = html.replace(/`([^`]+)`/g, (_, code) => {
+    const token = `__UCODE_${codeTokens.length}__`;
+    codeTokens.push(`<code>${escapeHtml(code)}</code>`);
+    return token;
+  });
+  html = html.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+  html = html.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  html = html.replace(/\n/g, '<br />');
+  html = codeTokens.reduce((r, tok, i) => r.replace(`__UCODE_${i}__`, tok), html);
+  return html;
 }

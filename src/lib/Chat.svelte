@@ -10,7 +10,7 @@
 
   import { currentModel, progress, wpm } from './js/store.js';
   import { markdownToHtml } from './js/markdown.js';
-  import { typeset, mathjaxToHtml } from './js/mathjax';
+  import { typeset, mathjaxToHtml, userMarkdownToHtml } from './js/mathjax';
 
   import { settings } from './js/Databases.js';
   import { changeUsername } from './js/auth.js';
@@ -31,7 +31,10 @@
     void syncChats();
   });
   
-  afterUpdate(() => {
+  // tick() waits for Svelte to finish painting {@html} into the DOM before
+  // calling typeset — without it MathJax scans before the content is there.
+  afterUpdate(async () => {
+    await tick();
     typeset(messagesViewport);
   });
 
@@ -146,7 +149,7 @@
       {#each messages as message (message.id)}
         <div class={message.role === 'user' ? 'user-message' : 'assistant-message'}>
           {#if message.role === 'user'}
-            <div class="user-bubble">{message.content}</div>
+            <div class="user-bubble">{@html userMarkdownToHtml(message.content)}</div>
           {:else}
             <div class="assistant-copy markdown-body">
               {@html mathjaxToHtml(message.content)}
@@ -326,23 +329,12 @@
     font-weight: 700;
   }
 
-  .markdown-body :global(h1) {
-    font-size: 1.5em;
-  }
-
-  .markdown-body :global(h2) {
-    font-size: 1.35em;
-  }
-
-  .markdown-body :global(h3) {
-    font-size: 1.2em;
-  }
-
+  .markdown-body :global(h1) { font-size: 1.5em; }
+  .markdown-body :global(h2) { font-size: 1.35em; }
+  .markdown-body :global(h3) { font-size: 1.2em; }
   .markdown-body :global(h4),
   .markdown-body :global(h5),
-  .markdown-body :global(h6) {
-    font-size: 1.05em;
-  }
+  .markdown-body :global(h6) { font-size: 1.05em; }
 
   .markdown-body :global(ul),
   .markdown-body :global(ol) {
@@ -367,7 +359,7 @@
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
-  
+
   .markdown-body :global(.typing-caret) {
     display: inline-block;
     width: 2px;
@@ -378,13 +370,13 @@
     opacity: 0.85;
     animation: blink 0.9s step-end infinite;
   }
-  
+
   .markdown-body :global(.math-block) {
     text-align: center;
     margin: 1em 0;
     overflow-x: auto;
   }
-  
+
   .markdown-body :global(.katex-display) {
     margin: 0;
   }
@@ -468,13 +460,8 @@
     animation: bounce 1s infinite ease-in-out;
   }
 
-  .thinking-dots span:nth-child(2) {
-    animation-delay: 0.15s;
-  }
-
-  .thinking-dots span:nth-child(3) {
-    animation-delay: 0.3s;
-  }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
 
   .progress-text {
     color: #8e8e8e;
@@ -509,9 +496,7 @@
   }
 
   @keyframes blink {
-    50% {
-      opacity: 0;
-    }
+    50% { opacity: 0; }
   }
 
   @keyframes bounce {
@@ -519,7 +504,6 @@
       transform: translateY(0);
       opacity: 0.45;
     }
-
     40% {
       transform: translateY(-4px);
       opacity: 1;
@@ -534,40 +518,19 @@
         max(16px, env(safe-area-inset-bottom))
         max(16px, env(safe-area-inset-left));
     }
-
-    .greeting {
-      font-size: 24px;
-    }
-
-    .chat-messages {
-      padding-bottom: 96px;
-    }
-
+    .greeting { font-size: 24px; }
+    .chat-messages { padding-bottom: 96px; }
     .input-wrapper,
-    .chat-input-wrapper {
-      padding: 6px 12px;
-    }
+    .chat-input-wrapper { padding: 6px 12px; }
   }
 
   @media (max-width: 480px) {
-    .user-bubble {
-      max-width: 85%;
-    }
-
-    .chat-messages {
-      padding-left: 4px;
-      padding-right: 4px;
-    }
+    .user-bubble { max-width: 85%; }
+    .chat-messages { padding-left: 4px; padding-right: 4px; }
   }
 
   @media (max-height: 540px) {
-    .greeting {
-      margin-bottom: 24px;
-      font-size: 22px;
-    }
-
-    .chat-messages {
-      padding-top: 8px;
-    }
+    .greeting { margin-bottom: 24px; font-size: 22px; }
+    .chat-messages { padding-top: 8px; }
   }
 </style>
