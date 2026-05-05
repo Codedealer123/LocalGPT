@@ -12,14 +12,16 @@
     <link rel="apple-touch-icon" type="image/png" sizes="128x128" href="/Icon128.png">
     <link rel="icon" type="image/png" sizes="256x256" href="/Icon256.png">
     <link rel="apple-touch-icon" type="image/png" sizes="256x256" href="/Icon256.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="Icon512.png">
-    <link rel="apple-touch-icon" type="image/png" sizes="512x512" href="Icon512.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/Icon512.png">
+    <link rel="apple-touch-icon" type="image/png" sizes="512x512" href="/Icon512.png">
 
     <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="application-name" content="LocalGPT">
     <meta name="apple-mobile-web-app-title" content="LocalGPT">
+
     <meta
       name="description"
       content="LocalGPT runs AI locally in your browser with WebLLM and WebGPU, giving you a ChatGPT-like UI, easy setup, and near-native performance without extra apps."
@@ -27,18 +29,25 @@
     <meta name="robots" content="index, follow">
     <meta name="color-scheme" content="dark">
     <meta name="format-detection" content="telephone=no">
+
+    <!-- Open Graph -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="LocalGPT">
     <meta property="og:description" content="Run AI locally in your browser with WebLLM and WebGPU using a ChatGPT-like UI and easy setup.">
     <meta property="og:image" content="/Icon512.png">
     <meta property="og:image:alt" content="LocalGPT app icon">
     <meta property="og:url" content="https://cdgamez.xyz/localgpt">
+
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="LocalGPT">
     <meta name="twitter:description" content="Run AI locally in your browser with WebLLM and WebGPU using a ChatGPT-like UI and easy setup.">
     <meta name="twitter:image" content="/Icon512.png">
     <meta name="twitter:image:alt" content="LocalGPT app icon">
+
     <link rel="canonical" href="https://cdgamez.xyz/localgpt">
+
+    <!-- Structured Data -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -50,31 +59,19 @@
         "description": "Run AI locally in your browser with WebLLM and WebGPU using a ChatGPT-like UI and easy setup."
       }
     </script>
+
     <meta name="theme-color" content="#212121">
     <meta name="msapplication-navbutton-color" content="#212121">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="msapplication-starturl" content="/LocalGPT">
 
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then((registration) => {
-              console.log('Service Worker successfully registered:', registration.scope);
-            })
-            .catch((error) => {
-              console.error('Service Worker registration failed:', error);
-            });
-        });
-      } else {
-        console.warn('Service Workers are not supported in this browser');
-      }
-    </script>
-        
     <title>LocalGPT</title>
   </head>
+
   <body>
     <div id="app"></div>
+
+    <!-- Vite entry -->
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
